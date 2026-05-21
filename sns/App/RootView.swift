@@ -769,25 +769,49 @@ private struct RootSearchView: View {
 private struct WeeklyBatchAvailabilityView: View {
     @Bindable var appState: AppState
     let isEnrolledInBatch: Bool
+    @State private var activeWindowID: AvailabilityWindow.ID?
 
     var body: some View {
         GeometryReader { proxy in
-            VStack(alignment: .leading, spacing: 16) {
-                WeeklyAvailabilityEditor(
-                    appState: appState,
-                    isLocked: isEnrolledInBatch,
-                    gridHeight: gridHeight(
-                        for: proxy.size.height,
-                        bottomSafeArea: proxy.safeAreaInsets.bottom
+            ZStack(alignment: .topLeading) {
+                Color(.systemGroupedBackground)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        activeWindowID = nil
+                    }
+
+                VStack(alignment: .leading, spacing: 16) {
+                    WeeklyAvailabilityEditor(
+                        appState: appState,
+                        isLocked: isEnrolledInBatch,
+                        gridHeight: gridHeight(
+                            for: proxy.size.height,
+                            bottomSafeArea: proxy.safeAreaInsets.bottom
+                        ),
+                        activeWindowID: $activeWindowID
                     )
-                )
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding()
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Availability")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Availability")
+                    .font(.headline)
+                    .frame(minWidth: 180, minHeight: 44)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        activeWindowID = nil
+                    }
+            }
+        }
+        .onDisappear {
+            activeWindowID = nil
+        }
     }
 
     private func gridHeight(for containerHeight: CGFloat, bottomSafeArea: CGFloat) -> CGFloat {
@@ -801,7 +825,7 @@ private struct WeeklyAvailabilityEditor: View {
     @Bindable var appState: AppState
     let isLocked: Bool
     let gridHeight: CGFloat
-    @State private var activeWindowID: AvailabilityWindow.ID?
+    @Binding var activeWindowID: AvailabilityWindow.ID?
     @State private var visibleStartIndex = 0
 
     private let visibleDayCount = 2
@@ -842,6 +866,10 @@ private struct WeeklyAvailabilityEditor: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    clearActiveWindow()
+                }
 
             WeeklyAvailabilityGrid(
                 appState: appState,
@@ -861,7 +889,7 @@ private struct WeeklyAvailabilityEditor: View {
         .accessibilityIdentifier("Weekly Availability Editor")
         .onChange(of: isLocked) { _, newValue in
             if newValue {
-                activeWindowID = nil
+                clearActiveWindow()
             }
         }
     }
@@ -875,10 +903,14 @@ private struct WeeklyAvailabilityEditor: View {
         let nextIndex = min(max(index, 0), maxStartIndex)
         guard nextIndex != visibleStartIndex else { return }
 
-        activeWindowID = nil
+        clearActiveWindow()
         withAnimation(.easeInOut(duration: 0.2)) {
             visibleStartIndex = nextIndex
         }
+    }
+
+    private func clearActiveWindow() {
+        activeWindowID = nil
     }
 }
 
@@ -938,8 +970,10 @@ private struct WeeklyAvailabilityGrid: View {
 
             VStack(spacing: 0) {
                 weekSelector
+                    .simultaneousGesture(clearActiveWindowGesture)
                 VStack(spacing: 0) {
                     dayHeader(dayWidth: dayWidth)
+                        .simultaneousGesture(clearActiveWindowGesture)
 
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
@@ -1175,6 +1209,7 @@ private struct WeeklyAvailabilityGrid: View {
                     .fill(Color(.systemBackground).opacity(0.001))
                     .contentShape(Rectangle())
                     .frame(width: dayWidth, height: interactiveContentHeight)
+                    .simultaneousGesture(clearActiveWindowGesture)
                     .gesture(createGesture(for: date), including: isLocked ? .subviews : .gesture)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Availability Day \(weekdayName(for: date))")
@@ -1227,6 +1262,14 @@ private struct WeeklyAvailabilityGrid: View {
                 }
 
                 onShiftVisibleDates(value.translation.width < 0 ? 1 : -1)
+            }
+    }
+
+    private var clearActiveWindowGesture: some Gesture {
+        TapGesture()
+            .onEnded {
+                guard !isLocked else { return }
+                activeWindowID = nil
             }
     }
 
