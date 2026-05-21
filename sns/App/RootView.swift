@@ -110,6 +110,8 @@ struct RootView: View {
         }
 
         networkSection
+
+        historySection
     }
 
     @ViewBuilder
@@ -228,6 +230,15 @@ struct RootView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("Network Info")
             }
+        }
+    }
+
+    private var historySection: some View {
+        Section("History") {
+            NavigationLink(value: RootDestination.page(.logbook)) {
+                valueRow(title: "Logbook", value: "\(MockData.logbookItems.count) events", systemImage: "checklist")
+            }
+            .accessibilityIdentifier("Logbook Row")
         }
     }
 

@@ -89,13 +89,6 @@ struct ProfileTabView: View {
                     .accessibilityIdentifier("Account \(substance.label) Substance Use Row")
                 }
             }
-
-            Section("Logbook") {
-                NavigationLink(value: RootDestination.page(.logbook)) {
-                    preferenceValueRow(title: "Logbook", value: "\(MockData.logbookItems.count) events", systemImage: "checklist")
-                }
-                .accessibilityIdentifier("Logbook Row")
-            }
         }
         .listStyle(.insetGrouped)
     }
