@@ -26,7 +26,7 @@ struct ProfileTabView: View {
                             Text(profileValue(appState.myCard.name))
                                 .font(.headline)
                                 .foregroundStyle(.primary)
-                            Text("Sharing Card")
+                            Text("What is shared to your match and when.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -34,8 +34,6 @@ struct ProfileTabView: View {
                     .padding(.vertical, 6)
                 }
                 .accessibilityIdentifier("Sharing Card Row")
-            } footer: {
-                Text("What is shared to your match and when.")
             }
 
             Section("Name") {
