@@ -2,6 +2,7 @@ import Foundation
 import Observation
 
 struct AnonymousMatchProfile: Hashable {
+    var name: String
     var age: Int
     var pronouns: String
     var neighborhood: String
@@ -9,6 +10,7 @@ struct AnonymousMatchProfile: Hashable {
     var interests: [String]
 
     static let mock = AnonymousMatchProfile(
+        name: "Hannah Miller",
         age: 26,
         pronouns: "they/them",
         neighborhood: "Hayes Valley",

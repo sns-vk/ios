@@ -117,61 +117,69 @@ struct RootView: View {
         if homeViewModel.hasMatchThisWeek {
             anonymousMatchProfile(profile: homeViewModel.matchProfile)
         } else {
-            VStack(spacing: 12) {
-                Image(systemName: "tray")
-                    .font(.system(size: 54, weight: .light))
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("No Match Mailbox Icon")
-                    .accessibilityIdentifier("No Match Mailbox Icon")
-
-                VStack(spacing: 4) {
-                    Text("No match yet")
-                        .font(.headline)
-                    Text("Your weekly match will appear here after release.")
-                        .font(.subheadline)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 14) {
+                    Image(systemName: "tray")
+                        .font(.system(size: 30, weight: .regular))
                         .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                        .frame(width: 56, height: 56)
+                        .accessibilityLabel("No Match Mailbox Icon")
+                        .accessibilityIdentifier("No Match Mailbox Icon")
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("No match yet")
+                            .font(.headline)
+                        Text("Your weekly match will appear here after release.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
                 }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Sunday release", systemImage: "calendar")
+                    Label("Meeting details unavailable", systemImage: "mappin.and.ellipse")
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .symbolRenderingMode(.hierarchical)
             }
             .frame(maxWidth: .infinity)
             .frame(minHeight: 132)
-            .padding(.vertical, 20)
+            .padding(10)
             .accessibilityIdentifier("No Match Empty State")
         }
     }
 
     private func anonymousMatchProfile(profile: AnonymousMatchProfile) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 14) {
                 matchAvatar
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("This week's match")
+                    Text(profile.name)
                         .font(.headline)
-                    Text("\(profile.age) · \(profile.pronouns) · \(profile.neighborhood)")
+                    Text("This week's match")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+
+                Spacer()
             }
 
+            Divider()
+
             VStack(alignment: .leading, spacing: 8) {
-                Label("Hayes Cafe Mock Spot", systemImage: "mappin.and.ellipse")
+                Label("\(profile.age) · \(profile.pronouns) · \(profile.neighborhood)", systemImage: "person.text.rectangle")
                 Label("Thursday, 3:00-3:30 PM", systemImage: "clock")
+                Label("Hayes Cafe Mock Spot", systemImage: "mappin.and.ellipse")
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .symbolRenderingMode(.hierarchical)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.08))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.accentColor.opacity(0.12), lineWidth: 1)
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(minHeight: 132, alignment: .center)
@@ -180,15 +188,12 @@ struct RootView: View {
     }
 
     private var matchAvatar: some View {
-        ZStack {
-            Circle()
-                .fill(Color.accentColor.opacity(0.16))
-
-            Text("HM")
-                .font(.system(size: 20, weight: .semibold, design: .serif))
-                .foregroundStyle(Color.accentColor)
-                .accessibilityIdentifier("Anonymous Match Initials Avatar")
-        }
+        Image(systemName: "person.crop.circle.fill")
+            .resizable()
+            .scaledToFit()
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("Anonymous Match Default Avatar")
         .frame(width: 52, height: 52)
     }
 
