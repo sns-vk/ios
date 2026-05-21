@@ -400,6 +400,13 @@ enum WeeklyAvailabilityCalendar {
         return ((components.hour ?? 0) * 60) + (components.minute ?? 0)
     }
 
+    static func minuteOffset(from day: Date, to date: Date, calendar: Calendar = .current) -> Int {
+        let configuredCalendar = configuredCalendar(from: calendar)
+        let startOfDay = configuredCalendar.startOfDay(for: day)
+        let rawMinute = Int((date.timeIntervalSince(startOfDay) / 60).rounded())
+        return min(max(rawMinute, WeeklyAvailabilityGridRules.startMinute), WeeklyAvailabilityGridRules.endMinute)
+    }
+
     static func date(on day: Date, minuteOfDay: Int, calendar: Calendar = .current) -> Date {
         let configuredCalendar = configuredCalendar(from: calendar)
         let startOfDay = configuredCalendar.startOfDay(for: day)
@@ -709,11 +716,13 @@ extension AppState {
     }
 
     func availabilityMinuteWindows(on date: Date, calendar: Calendar = .current) -> [AvailabilityMinuteWindow] {
-        availabilityWindows(on: date, calendar: calendar).map {
+        let configuredCalendar = WeeklyAvailabilityCalendar.configuredCalendar(from: calendar)
+        let day = configuredCalendar.startOfDay(for: date)
+        return availabilityWindows(on: date, calendar: calendar).map {
             AvailabilityMinuteWindow(
                 id: $0.id,
-                startMinute: WeeklyAvailabilityCalendar.minuteOfDay(for: $0.startTime, calendar: calendar),
-                endMinute: WeeklyAvailabilityCalendar.minuteOfDay(for: $0.endTime, calendar: calendar)
+                startMinute: WeeklyAvailabilityCalendar.minuteOffset(from: day, to: $0.startTime, calendar: configuredCalendar),
+                endMinute: WeeklyAvailabilityCalendar.minuteOffset(from: day, to: $0.endTime, calendar: configuredCalendar)
             )
         }
     }

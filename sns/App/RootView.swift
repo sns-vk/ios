@@ -742,18 +742,23 @@ private struct WeeklyBatchAvailabilityView: View {
                 WeeklyAvailabilityEditor(
                     appState: appState,
                     isLocked: isEnrolledInBatch,
-                    gridHeight: gridHeight(for: proxy.size.height)
+                    gridHeight: gridHeight(
+                        for: proxy.size.height,
+                        bottomSafeArea: proxy.safeAreaInsets.bottom
+                    )
                 )
             }
             .padding()
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("Availability")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func gridHeight(for containerHeight: CGFloat) -> CGFloat {
-        let reservedHeight: CGFloat = 130
+    private func gridHeight(for containerHeight: CGFloat, bottomSafeArea: CGFloat) -> CGFloat {
+        let tabBarClearance: CGFloat = 96
+        let reservedHeight = 130 + max(bottomSafeArea, tabBarClearance)
         return min(max(containerHeight - reservedHeight, 360), 620)
     }
 }
@@ -763,31 +768,61 @@ private struct WeeklyAvailabilityEditor: View {
     let isLocked: Bool
     let gridHeight: CGFloat
     @State private var activeWindowID: AvailabilityWindow.ID?
+    @State private var visibleStartIndex = 0
+
+    private let visibleDayCount = 2
 
     private var calendar: Calendar {
         WeeklyAvailabilityCalendar.configuredCalendar()
     }
 
-    private var nextWeekMonthTitle: String {
-        let dates = WeeklyAvailabilityCalendar.nextWeekDates(calendar: calendar)
-        guard let first = dates.first else {
+    private var weekDates: [Date] {
+        WeeklyAvailabilityCalendar.nextWeekDates(calendar: calendar)
+    }
+
+    private var visibleDates: [Date] {
+        let endIndex = min(visibleStartIndex + visibleDayCount, weekDates.count)
+        guard visibleStartIndex < endIndex else {
+            return []
+        }
+
+        return Array(weekDates[visibleStartIndex..<endIndex])
+    }
+
+    private var visibleMonthTitle: String {
+        guard let first = visibleDates.first else {
             return "Next Week"
         }
 
-        return first.formatted(.dateTime.month(.wide))
+        guard let last = visibleDates.last,
+              calendar.component(.month, from: first) != calendar.component(.month, from: last) else {
+            return first.formatted(.dateTime.month(.wide))
+        }
+
+        return "\(first.formatted(.dateTime.month(.wide))) / \(last.formatted(.dateTime.month(.wide)))"
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(nextWeekMonthTitle)
-                .font(.subheadline.weight(.semibold))
+        VStack(alignment: .leading, spacing: 8) {
+            Text(visibleMonthTitle)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
 
             WeeklyAvailabilityGrid(
                 appState: appState,
                 isLocked: isLocked,
+                visibleStartIndex: visibleStartIndex,
+                visibleDayCount: visibleDayCount,
+                visibleDates: visibleDates,
                 visibleGridHeight: gridHeight,
-                activeWindowID: $activeWindowID
+                activeWindowID: $activeWindowID,
+                onShiftVisibleDates: shiftVisibleDates,
+                onSelectVisibleStartIndex: selectVisibleStartIndex
             )
+            .padding(12)
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
         .accessibilityIdentifier("Weekly Availability Editor")
         .onChange(of: isLocked) { _, newValue in
@@ -796,51 +831,51 @@ private struct WeeklyAvailabilityEditor: View {
             }
         }
     }
+
+    private func shiftVisibleDates(by offset: Int) {
+        selectVisibleStartIndex(visibleStartIndex + offset)
+    }
+
+    private func selectVisibleStartIndex(_ index: Int) {
+        let maxStartIndex = max(0, weekDates.count - visibleDayCount)
+        let nextIndex = min(max(index, 0), maxStartIndex)
+        guard nextIndex != visibleStartIndex else { return }
+
+        activeWindowID = nil
+        withAnimation(.easeInOut(duration: 0.2)) {
+            visibleStartIndex = nextIndex
+        }
+    }
 }
 
 private struct WeeklyAvailabilityGrid: View {
     @Bindable var appState: AppState
     let isLocked: Bool
+    let visibleStartIndex: Int
+    let visibleDayCount: Int
+    let visibleDates: [Date]
     let visibleGridHeight: CGFloat
     @Binding var activeWindowID: AvailabilityWindow.ID?
+    let onShiftVisibleDates: (Int) -> Void
+    let onSelectVisibleStartIndex: (Int) -> Void
 
     @State private var creatingWindowID: AvailabilityWindow.ID?
     @State private var movingOriginalWindow: AvailabilityMinuteWindow?
     @State private var resizingStartOriginalWindow: AvailabilityMinuteWindow?
     @State private var resizingEndOriginalWindow: AvailabilityMinuteWindow?
     @State private var scrollOffsetY: CGFloat = 0
-    @State private var autoScrollAction: AutoScrollAction?
-    @State private var autoScrollDirection: Int = 0
-    @State private var autoScrollVisibleY: CGFloat = 0
-    @State private var requestedScrollOffsetY: CGFloat?
-    @State private var scrollRequest: AvailabilityScrollRequest?
 
     private let timeLabelWidth: CGFloat = 50
     private let hourHeight: CGFloat = 56
-    private let headerHeight: CGFloat = 44
+    private let headerHeight: CGFloat = 38
+    private let weekSelectorHeight: CGFloat = 76
+    private let topScrollInset: CGFloat = 28
+    private let initialTopMinute = (16 * 60) + 30
     private let slotHorizontalInset: CGFloat = 5
-    private let autoScrollThreshold: CGFloat = 44
-    private let autoScrollStep: CGFloat = 18
-    private let activeColor = Color(red: 0.62, green: 0.10, blue: 0.32)
-    private let autoScrollTimer = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
+    private let bottomDragSlop: CGFloat = 28
+    private let activeColor = Color.accentColor
     private let scrollViewCoordinateSpace = "AvailabilityGridScrollView"
     private let contentCoordinateSpace = "AvailabilityGridContent"
-
-    private enum AutoScrollAction: Equatable {
-        case create(Date, UUID, CGFloat)
-        case move(Date, AvailabilityMinuteWindow, CGFloat)
-        case resizeStart(Date, AvailabilityMinuteWindow, CGFloat)
-        case resizeEnd(Date, AvailabilityMinuteWindow, CGFloat)
-    }
-
-    private struct AvailabilityScrollRequest: Equatable {
-        let id = UUID()
-        let minute: Int
-
-        init(minute: Int) {
-            self.minute = minute
-        }
-    }
 
     private var calendar: Calendar {
         WeeklyAvailabilityCalendar.configuredCalendar()
@@ -854,47 +889,148 @@ private struct WeeklyAvailabilityGrid: View {
         CGFloat(WeeklyAvailabilityGridRules.endMinute - WeeklyAvailabilityGridRules.startMinute) / 60 * hourHeight
     }
 
+    private var bottomScrollInset: CGFloat {
+        max(visibleGridHeight - (contentHeight - minuteY(initialTopMinute)), 0)
+    }
+
+    private var interactiveContentHeight: CGFloat {
+        contentHeight + bottomDragSlop
+    }
+
     var body: some View {
         GeometryReader { geometry in
-            let dayWidth = max((geometry.size.width - timeLabelWidth) / 7, 34)
+            let dayCount = max(visibleDates.count, 1)
+            let dayWidth = max((geometry.size.width - timeLabelWidth) / CGFloat(dayCount), 96)
 
             VStack(spacing: 0) {
-                dayHeader(dayWidth: dayWidth)
+                weekSelector
+                VStack(spacing: 0) {
+                    dayHeader(dayWidth: dayWidth)
 
-                ScrollViewReader { proxy in
-                    ScrollView(.vertical) {
-                        ZStack(alignment: .topLeading) {
-                            scrollOffsetReader()
-                            scrollAnchors()
-                            gridLines(totalWidth: geometry.size.width, dayWidth: dayWidth)
-                            creationColumns(dayWidth: dayWidth)
-                            availabilityWindows(dayWidth: dayWidth)
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical, showsIndicators: false) {
+                            VStack(spacing: 0) {
+                                Color.clear
+                                    .frame(height: topScrollInset)
+
+                                ZStack(alignment: .topLeading) {
+                                    scrollOffsetReader()
+                                    scrollAnchors()
+                                    gridLines(totalWidth: geometry.size.width, dayWidth: dayWidth)
+                                    creationColumns(dayWidth: dayWidth)
+                                    availabilityWindows(dayWidth: dayWidth)
+                                }
+                                .frame(width: geometry.size.width, height: interactiveContentHeight, alignment: .topLeading)
+                                .coordinateSpace(name: contentCoordinateSpace)
+
+                                Color.clear
+                                    .frame(height: bottomScrollInset)
+                            }
                         }
-                        .frame(width: geometry.size.width, height: contentHeight, alignment: .topLeading)
-                        .coordinateSpace(name: contentCoordinateSpace)
-                    }
-                    .coordinateSpace(name: scrollViewCoordinateSpace)
-                    .frame(height: visibleGridHeight)
-                    .clipped()
-                    .onPreferenceChange(AvailabilityScrollOffsetKey.self) { value in
-                        scrollOffsetY = max(0, -value)
-                    }
-                    .onChange(of: scrollRequest) { _, request in
-                        guard let request else { return }
-                        withAnimation(.linear(duration: 0.08)) {
-                            proxy.scrollTo(scrollAnchorID(for: request.minute), anchor: .top)
+                        .coordinateSpace(name: scrollViewCoordinateSpace)
+                        .frame(height: visibleGridHeight)
+                        .background(alignment: .topLeading) {
+                            columnSeparators(dayWidth: dayWidth, height: visibleGridHeight)
                         }
+                        .clipped()
+                        .contentMargins(.all, 0, for: .scrollContent)
+                        .scrollIndicators(.hidden)
+                        .onPreferenceChange(AvailabilityScrollOffsetKey.self) { value in
+                            scrollOffsetY = max(0, -value)
+                        }
+                        .onAppear {
+                            scrollOffsetY = minuteY(initialTopMinute)
+                            DispatchQueue.main.async {
+                                proxy.scrollTo(scrollAnchorID(for: initialTopMinute), anchor: .top)
+                            }
+                        }
+                    }
+                }
+                .id(visibleStartIndex)
+                .transition(.opacity)
+            }
+        }
+        .frame(height: weekSelectorHeight + headerHeight + visibleGridHeight)
+        .contentShape(Rectangle())
+        .simultaneousGesture(intervalSwipeGesture)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Weekly Availability Grid")
+        .accessibilityIdentifier("Weekly Availability Grid")
+    }
+
+    private var weekSelector: some View {
+        GeometryReader { proxy in
+            let dayCount = max(weekDates.count, 1)
+            let dayWidth = proxy.size.width / CGFloat(dayCount)
+            let pillInset: CGFloat = 5
+            let pillHeight: CGFloat = 42
+            let pillY: CGFloat = 28
+            let circleSize: CGFloat = 32
+            let circleX = (dayWidth * CGFloat(visibleStartIndex)) + ((dayWidth - circleSize) / 2)
+            let pillX = circleX - pillInset
+            let pillWidth = (dayWidth * CGFloat(visibleDayCount)) - (dayWidth - circleSize) + (pillInset * 2)
+
+            ZStack(alignment: .topLeading) {
+                if !weekDates.isEmpty {
+                    Capsule()
+                        .fill(Color(.tertiarySystemFill))
+                        .frame(
+                            width: pillWidth,
+                            height: pillHeight
+                        )
+                        .offset(x: pillX, y: pillY)
+
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: circleSize, height: circleSize)
+                        .offset(
+                            x: circleX,
+                            y: pillY + ((pillHeight - circleSize) / 2)
+                        )
+                }
+
+                HStack(spacing: 0) {
+                    ForEach(Array(weekDates.enumerated()), id: \.element) { index, date in
+                        Button {
+                            onSelectVisibleStartIndex(index)
+                        } label: {
+                            VStack(spacing: 6) {
+                                Text(date.formatted(.dateTime.weekday(.abbreviated)))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+
+                                Text(date.formatted(.dateTime.day()))
+                                    .font(.title3.weight(.medium))
+                                    .foregroundStyle(dateForegroundStyle(for: index))
+                                    .frame(height: circleSize + 2)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: weekSelectorHeight)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("Availability Week Selector \(weekdayName(for: date))")
                     }
                 }
             }
         }
-        .frame(height: headerHeight + visibleGridHeight)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Weekly Availability Grid")
-        .accessibilityIdentifier("Weekly Availability Grid")
-        .onReceive(autoScrollTimer) { _ in
-            performAutoScrollTick()
+        .frame(height: weekSelectorHeight)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color(.separator).opacity(0.35))
+                .frame(height: 1)
         }
+    }
+
+    private func isDateVisible(at index: Int) -> Bool {
+        index >= visibleStartIndex && index < visibleStartIndex + visibleDayCount
+    }
+
+    private func dateForegroundStyle(for index: Int) -> Color {
+        if index == visibleStartIndex {
+            return .white
+        }
+
+        return .primary
     }
 
     private func dayHeader(dayWidth: CGFloat) -> some View {
@@ -902,27 +1038,31 @@ private struct WeeklyAvailabilityGrid: View {
             Color.clear
                 .frame(width: timeLabelWidth)
 
-            ForEach(weekDates, id: \.self) { date in
-                VStack(spacing: 3) {
-                    Text(date.formatted(.dateTime.weekday(.abbreviated)).prefix(1).uppercased())
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text(date.formatted(.dateTime.day()))
-                        .font(.title3.weight(.medium))
-                        .foregroundStyle(.primary)
-                }
+            ForEach(visibleDates, id: \.self) { date in
+                Text(dayHeaderLabel(for: date))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                 .frame(width: dayWidth, height: headerHeight)
                 .accessibilityIdentifier("Availability Day Header \(weekdayName(for: date))")
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color(.secondarySystemGroupedBackground))
+        .overlay(alignment: .topLeading) {
+            columnSeparators(dayWidth: dayWidth, height: headerHeight)
+        }
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Color(.separator).opacity(0.35))
                 .frame(height: 1)
-                .shadow(color: Color.black.opacity(0.16), radius: 3, x: 0, y: 2)
         }
+    }
+
+    private func dayHeaderLabel(for date: Date) -> String {
+        let month = calendar.component(.month, from: date)
+        let day = calendar.component(.day, from: date)
+        return "\(date.formatted(.dateTime.weekday(.wide))) - \(month)/\(day)"
     }
 
     private func gridLines(totalWidth: CGFloat, dayWidth: CGFloat) -> some View {
@@ -932,12 +1072,6 @@ private struct WeeklyAvailabilityGrid: View {
                     let y = minuteY(hour * 60)
                     path.move(to: CGPoint(x: timeLabelWidth, y: y))
                     path.addLine(to: CGPoint(x: totalWidth, y: y))
-                }
-
-                for dayIndex in 0...7 {
-                    let x = timeLabelWidth + (CGFloat(dayIndex) * dayWidth)
-                    path.move(to: CGPoint(x: x, y: 0))
-                    path.addLine(to: CGPoint(x: x, y: contentHeight))
                 }
             }
             .stroke(Color(.separator).opacity(0.55), lineWidth: 1)
@@ -952,6 +1086,18 @@ private struct WeeklyAvailabilityGrid: View {
         }
     }
 
+    private func columnSeparators(dayWidth: CGFloat, height: CGFloat) -> some View {
+        Path { path in
+            for dayIndex in 0...visibleDates.count {
+                let x = timeLabelWidth + (CGFloat(dayIndex) * dayWidth)
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: height))
+            }
+        }
+        .stroke(Color(.separator).opacity(0.55), lineWidth: 1)
+        .allowsHitTesting(false)
+    }
+
     private func scrollOffsetReader() -> some View {
         GeometryReader { proxy in
             Color.clear
@@ -964,25 +1110,37 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private func scrollAnchors() -> some View {
-        ForEach(Array(stride(
-            from: WeeklyAvailabilityGridRules.startMinute,
-            through: WeeklyAvailabilityGridRules.endMinute,
-            by: WeeklyAvailabilityGridRules.snapIntervalMinutes
-        )), id: \.self) { minute in
-            Color.clear
-                .frame(width: 1, height: 1)
-                .id(scrollAnchorID(for: minute))
-                .offset(x: 0, y: minuteY(minute))
+        VStack(spacing: 0) {
+            ForEach(Array(stride(
+                from: WeeklyAvailabilityGridRules.startMinute,
+                to: WeeklyAvailabilityGridRules.endMinute,
+                by: WeeklyAvailabilityGridRules.snapIntervalMinutes
+            )), id: \.self) { minute in
+                Color.clear
+                    .frame(width: 1, height: minuteHeight(WeeklyAvailabilityGridRules.snapIntervalMinutes))
+                    .id(scrollAnchorID(for: minute))
+            }
         }
+        .frame(width: 1, height: contentHeight, alignment: .topLeading)
+        .allowsHitTesting(false)
+    }
+
+    private func scrollAnchorMinute(for minute: Int) -> Int {
+        let maxAnchorMinute = WeeklyAvailabilityGridRules.endMinute - WeeklyAvailabilityGridRules.snapIntervalMinutes
+        return min(max(minute, WeeklyAvailabilityGridRules.startMinute), maxAnchorMinute)
+    }
+
+    private func scrollAnchorID(for minute: Int) -> String {
+        "availability-minute-\(scrollAnchorMinute(for: minute))"
     }
 
     private func creationColumns(dayWidth: CGFloat) -> some View {
         HStack(spacing: 0) {
-            ForEach(weekDates, id: \.self) { date in
+            ForEach(visibleDates, id: \.self) { date in
                 Rectangle()
                     .fill(Color(.systemBackground).opacity(0.001))
                     .contentShape(Rectangle())
-                    .frame(width: dayWidth, height: contentHeight)
+                    .frame(width: dayWidth, height: interactiveContentHeight)
                     .gesture(createGesture(for: date), including: isLocked ? .subviews : .gesture)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Availability Day \(weekdayName(for: date))")
@@ -993,9 +1151,9 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private func availabilityWindows(dayWidth: CGFloat) -> some View {
-        ForEach(Array(weekDates.enumerated()), id: \.element) { dayIndex, date in
+        ForEach(Array(visibleDates.enumerated()), id: \.element) { dayIndex, date in
             ForEach(appState.availabilityWindows(on: date, calendar: calendar)) { window in
-                let minuteWindow = minuteWindow(for: window)
+                let minuteWindow = minuteWindow(for: window, on: date)
                 let isActive = !isLocked && activeWindowID == window.id
                 let windowHeight = max(minuteHeight(minuteWindow.endMinute - minuteWindow.startMinute), 28)
 
@@ -1026,6 +1184,18 @@ private struct WeeklyAvailabilityGrid: View {
         }
     }
 
+    private var intervalSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 28)
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height),
+                      abs(value.translation.width) > 48 else {
+                    return
+                }
+
+                onShiftVisibleDates(value.translation.width < 0 ? 1 : -1)
+            }
+    }
+
     private func createGesture(for date: Date) -> some Gesture {
         LongPressGesture(minimumDuration: 0.25)
             .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named(contentCoordinateSpace)))
@@ -1047,10 +1217,6 @@ private struct WeeklyAvailabilityGrid: View {
                             anchorContentY: anchorContentY,
                             currentContentY: currentContentY
                         )
-                        updateAutoScroll(
-                            contentY: currentContentY,
-                            action: .create(date, windowID, anchorContentY)
-                        )
                     }
                 default:
                     break
@@ -1068,7 +1234,6 @@ private struct WeeklyAvailabilityGrid: View {
                     )
                 }
                 creatingWindowID = nil
-                stopAutoScroll()
             }
     }
 
@@ -1083,11 +1248,9 @@ private struct WeeklyAvailabilityGrid: View {
                 let grabOffsetY = boundedContentY(value.startLocation.y) - minuteY(originalWindow.startMinute)
                 let currentContentY = boundedContentY(value.location.y)
                 updateMovedWindow(originalWindow, on: date, targetStartContentY: currentContentY - grabOffsetY)
-                updateAutoScroll(contentY: currentContentY, action: .move(date, originalWindow, grabOffsetY))
             }
             .onEnded { _ in
                 movingOriginalWindow = nil
-                stopAutoScroll()
             }
     }
 
@@ -1102,11 +1265,9 @@ private struct WeeklyAvailabilityGrid: View {
                 let grabOffsetY = boundedContentY(value.startLocation.y) - minuteY(originalWindow.startMinute)
                 let currentContentY = boundedContentY(value.location.y)
                 updateResizedStartWindow(originalWindow, on: date, targetContentY: currentContentY - grabOffsetY)
-                updateAutoScroll(contentY: currentContentY, action: .resizeStart(date, originalWindow, grabOffsetY))
             }
             .onEnded { _ in
                 resizingStartOriginalWindow = nil
-                stopAutoScroll()
             }
     }
 
@@ -1121,11 +1282,9 @@ private struct WeeklyAvailabilityGrid: View {
                 let grabOffsetY = boundedContentY(value.startLocation.y) - minuteY(originalWindow.endMinute)
                 let currentContentY = boundedContentY(value.location.y)
                 updateResizedEndWindow(originalWindow, on: date, targetContentY: currentContentY - grabOffsetY)
-                updateAutoScroll(contentY: currentContentY, action: .resizeEnd(date, originalWindow, grabOffsetY))
             }
             .onEnded { _ in
                 resizingEndOriginalWindow = nil
-                stopAutoScroll()
             }
     }
 
@@ -1180,64 +1339,18 @@ private struct WeeklyAvailabilityGrid: View {
         appState.upsertAvailabilityWindow(resizedWindow, on: date, calendar: calendar)
     }
 
-    private func updateAutoScroll(contentY: CGFloat, action: AutoScrollAction) {
-        let visibleY = visibleY(forContentY: contentY)
-        autoScrollAction = action
-        autoScrollVisibleY = min(max(visibleY, 0), visibleGridHeight)
-
-        if visibleY < autoScrollThreshold {
-            autoScrollDirection = -1
-        } else if visibleY > visibleGridHeight - autoScrollThreshold {
-            autoScrollDirection = 1
-        } else {
-            autoScrollDirection = 0
-        }
-    }
-
-    private func performAutoScrollTick() {
-        guard !isLocked,
-              autoScrollDirection != 0,
-              let action = autoScrollAction else {
-            return
-        }
-
-        let maxOffset = max(contentHeight - visibleGridHeight, 0)
-        let currentOffset = requestedScrollOffsetY ?? scrollOffsetY
-        let proposedOffset = min(max(currentOffset + (CGFloat(autoScrollDirection) * autoScrollStep), 0), maxOffset)
-        let targetMinute = minute(forContentY: proposedOffset)
-        let nextOffset = min(minuteY(targetMinute), maxOffset)
-        guard nextOffset != currentOffset else {
-            return
-        }
-
-        requestedScrollOffsetY = nextOffset
-        scrollRequest = AvailabilityScrollRequest(minute: targetMinute)
-        let targetContentY = nextOffset + autoScrollVisibleY
-
-        switch action {
-        case .create(let date, let id, let anchorY):
-            updateCreatingWindow(id: id, on: date, anchorContentY: anchorY, currentContentY: targetContentY)
-        case .move(let date, let window, let grabOffsetY):
-            updateMovedWindow(window, on: date, targetStartContentY: targetContentY - grabOffsetY)
-        case .resizeStart(let date, let window, let grabOffsetY):
-            updateResizedStartWindow(window, on: date, targetContentY: targetContentY - grabOffsetY)
-        case .resizeEnd(let date, let window, let grabOffsetY):
-            updateResizedEndWindow(window, on: date, targetContentY: targetContentY - grabOffsetY)
-        }
-    }
-
-    private func stopAutoScroll() {
-        autoScrollDirection = 0
-        autoScrollAction = nil
-        requestedScrollOffsetY = nil
-    }
-
-    private func minuteWindow(for window: AvailabilityWindow) -> AvailabilityMinuteWindow {
+    private func minuteWindow(for window: AvailabilityWindow, on date: Date) -> AvailabilityMinuteWindow {
         AvailabilityMinuteWindow(
             id: window.id,
-            startMinute: WeeklyAvailabilityCalendar.minuteOfDay(for: window.startTime, calendar: calendar),
-            endMinute: WeeklyAvailabilityCalendar.minuteOfDay(for: window.endTime, calendar: calendar)
+            startMinute: minuteOffset(for: window.startTime, on: date),
+            endMinute: minuteOffset(for: window.endTime, on: date)
         )
+    }
+
+    private func minuteOffset(for time: Date, on date: Date) -> Int {
+        let day = calendar.startOfDay(for: date)
+        let rawMinute = Int((time.timeIntervalSince(day) / 60).rounded())
+        return min(max(rawMinute, WeeklyAvailabilityGridRules.startMinute), WeeklyAvailabilityGridRules.endMinute)
     }
 
     private func minute(forContentY y: CGFloat) -> Int {
@@ -1246,11 +1359,7 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private func contentY(forVisibleY y: CGFloat) -> CGFloat {
-        boundedContentY((requestedScrollOffsetY ?? scrollOffsetY) + y)
-    }
-
-    private func visibleY(forContentY y: CGFloat) -> CGFloat {
-        y - (requestedScrollOffsetY ?? scrollOffsetY)
+        boundedContentY(scrollOffsetY + y)
     }
 
     private func boundedContentY(_ y: CGFloat) -> CGFloat {
@@ -1281,10 +1390,6 @@ private struct WeeklyAvailabilityGrid: View {
     private func weekdayName(for date: Date) -> String {
         date.formatted(.dateTime.weekday(.wide))
     }
-
-    private func scrollAnchorID(for minute: Int) -> String {
-        "availability-minute-\(minute)"
-    }
 }
 
 private struct AvailabilityScrollOffsetKey: PreferenceKey {
@@ -1308,20 +1413,20 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
     var body: some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 5)
-                .fill(isActive ? Color.clear : activeColor.opacity(isLocked ? 0.16 : 0.22))
+                .fill(activeColor)
                 .overlay(
                     RoundedRectangle(cornerRadius: 5)
-                        .stroke(activeColor, lineWidth: isActive ? 3 : 1.5)
+                        .stroke(activeColor, lineWidth: isActive ? 2 : 0)
                 )
                 .shadow(color: isActive ? .black.opacity(0.16) : .clear, radius: 3, y: 1)
                 .contentShape(Rectangle())
                 .gesture(moveGesture)
 
-            Text("\(window.startTime.formatted(date: .omitted, time: .shortened))-\(window.endTime.formatted(date: .omitted, time: .shortened))")
+            Text("\(window.startTime.formatted(date: .omitted, time: .shortened))–\(window.endTime.formatted(date: .omitted, time: .shortened))")
                 .font(.caption2.weight(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .foregroundStyle(isActive ? activeColor : .primary)
+                .foregroundStyle(.white)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 4)
 
