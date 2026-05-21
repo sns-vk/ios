@@ -6,6 +6,8 @@ struct RootView: View {
     @State private var router = AppRouter()
     @State private var homeViewModel = HomeViewModel()
     @State private var showNetworkInfoPopup = false
+    @State private var enrollmentShimmerTrigger = 0
+    @State private var hasShownMatchTab = false
 
     var body: some View {
         TabView(selection: Binding(
@@ -27,6 +29,9 @@ struct RootView: View {
                     }
                     .onDisappear {
                         homeViewModel.cancelMatchSimulation()
+                    }
+                    .onAppear {
+                        triggerEnrollmentShimmerAfterFirstAppearance()
                     }
                     .navigationDestination(for: RootDestination.self) { destination in
                         rootDestination(for: destination)
@@ -64,6 +69,10 @@ struct RootView: View {
         } message: {
             Text("To keep the network trustworthy, contacts can only be added in person via Bluetooth. Add contacts to groups, then reorder groups to set match priority.")
         }
+        .onChange(of: router.selectedTab) { _, newTab in
+            guard newTab == .match else { return }
+            triggerEnrollmentShimmerAfterFirstAppearance()
+        }
     }
 
     @ViewBuilder
@@ -92,6 +101,7 @@ struct RootView: View {
                 isEnrolledInBatch: isEnrolledInBatch,
                 isEnabled: appState.hasCompleteWeeklyAvailability,
                 resetTrigger: homeViewModel.sliderResetTrigger,
+                shimmerTrigger: enrollmentShimmerTrigger,
                 disabledText: "Add availability"
             ) {
                 enrollInWeeklyBatch()
@@ -300,6 +310,20 @@ struct RootView: View {
     private func enrollInWeeklyBatch() {
         appState.enrollInWeeklyBatch()
         homeViewModel.confirmEnrollment()
+    }
+
+    private func triggerEnrollmentShimmerAfterFirstAppearance() {
+        guard appState.hasCompleteWeeklyAvailability, !isEnrolledInBatch else {
+            hasShownMatchTab = true
+            return
+        }
+
+        guard hasShownMatchTab else {
+            hasShownMatchTab = true
+            return
+        }
+
+        enrollmentShimmerTrigger += 1
     }
 
     @ViewBuilder

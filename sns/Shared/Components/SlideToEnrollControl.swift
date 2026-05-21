@@ -4,10 +4,12 @@ struct SlideToEnrollControl: View {
     let isEnrolledInBatch: Bool
     var isEnabled: Bool = true
     let resetTrigger: Int
+    var shimmerTrigger: Int = 0
     var disabledText = "Add availability to enroll"
     let onCompleted: () -> Void
 
     @State private var knobOffset: CGFloat = 0
+    @State private var shimmerPhase: CGFloat = -1
 
     var body: some View {
         GeometryReader { geometry in
@@ -15,27 +17,42 @@ struct SlideToEnrollControl: View {
             let knobInset: CGFloat = 4
             let knobSize = trackHeight - (knobInset * 2)
             let maxOffset = geometry.size.width - knobSize - (knobInset * 2)
+            let currentOffset = isEnrolledInBatch ? maxOffset : knobOffset
+            let knobWidth = isEnrolledInBatch ? knobSize : knobSize + currentOffset
+            let knobX = isEnrolledInBatch ? maxOffset + knobInset : knobInset
 
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.gray.opacity(isEnabled || isEnrolledInBatch ? 0.18 : 0.1))
+                    .fill(.ultraThinMaterial)
+                    .overlay {
+                        Capsule()
+                            .fill(Color.gray.opacity(isEnabled || isEnrolledInBatch ? 0.12 : 0.08))
+                    }
+                    .overlay {
+                        Capsule()
+                            .stroke(Color.white.opacity(0.42), lineWidth: 1)
+                    }
 
-                Text(sliderText)
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
+                sliderLabel
 
-                ZStack {
+                ZStack(alignment: .trailing) {
                     Capsule()
-                        .fill(Color.white)
-                        .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
+                        .fill(isEnabled || isEnrolledInBatch ? Color.accentColor : Color(.systemBackground))
+                        .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
+                        .overlay {
+                            Capsule()
+                                .stroke(Color.white.opacity(isEnabled || isEnrolledInBatch ? 0.36 : 0.5), lineWidth: 1)
+                        }
 
                     Image(systemName: knobSystemImage)
                         .font(.headline)
                         .foregroundStyle(knobColor)
+                        .frame(width: knobSize, height: knobSize)
                 }
-                .frame(width: knobSize, height: knobSize)
-                .offset(x: isEnrolledInBatch ? maxOffset + knobInset : knobOffset + knobInset)
+                .frame(width: knobWidth, height: knobSize)
+                .offset(x: knobX)
+                .animation(.interactiveSpring(response: 0.25, dampingFraction: 0.9), value: currentOffset)
+                .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.82), value: isEnrolledInBatch)
             }
             .frame(height: trackHeight)
             .contentShape(Rectangle())
@@ -66,6 +83,9 @@ struct SlideToEnrollControl: View {
         }
         .frame(height: 56)
         .opacity(isEnabled || isEnrolledInBatch ? 1 : 0.65)
+        .onChange(of: shimmerTrigger) { _, _ in
+            playTextShimmer()
+        }
         .onChange(of: resetTrigger) { _, _ in
             guard !isEnrolledInBatch else { return }
             withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
@@ -77,6 +97,38 @@ struct SlideToEnrollControl: View {
             withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
                 knobOffset = 0
             }
+        }
+    }
+
+    private var sliderLabel: some View {
+        Text(sliderText)
+            .font(.headline)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                if isEnabled && !isEnrolledInBatch {
+                    Text(sliderText)
+                        .font(.headline)
+                        .foregroundStyle(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .clear, location: 0),
+                                    .init(color: .white.opacity(0.9), location: 0.5),
+                                    .init(color: .clear, location: 1)
+                                ],
+                                startPoint: UnitPoint(x: shimmerPhase, y: 0.5),
+                                endPoint: UnitPoint(x: shimmerPhase + 0.55, y: 0.5)
+                            )
+                        )
+                }
+            }
+    }
+
+    private func playTextShimmer() {
+        guard isEnabled, !isEnrolledInBatch else { return }
+        shimmerPhase = -0.65
+        withAnimation(.easeInOut(duration: 0.9)) {
+            shimmerPhase = 1.1
         }
     }
 
@@ -97,10 +149,6 @@ struct SlideToEnrollControl: View {
     }
 
     private var knobColor: Color {
-        if isEnrolledInBatch {
-            return .green
-        }
-
-        return isEnabled ? .gray : .secondary
+        isEnabled || isEnrolledInBatch ? .white : .secondary
     }
 }
