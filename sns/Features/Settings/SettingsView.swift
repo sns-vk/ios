@@ -23,7 +23,7 @@ struct ProfileTabView: View {
                         MyCardAvatarView(contact: appState.myCard, size: 56)
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(profileValue(appState.myCard.name))
+                            Text("Sharing Card")
                                 .font(.headline)
                                 .foregroundStyle(.primary)
                             Text("What is shared to your match and when.")
@@ -701,7 +701,7 @@ struct MatchPolicyView: View {
                     .buttonStyle(.plain)
                 }
             } footer: {
-                Text("Choose how broadly this week's match can be selected.")
+                Text("Choose how connected they are to you.")
             }
         }
         .navigationTitle("Match Policy")

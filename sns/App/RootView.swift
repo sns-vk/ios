@@ -19,13 +19,14 @@ struct RootView: View {
                     List {
                         matchSections
                     }
-                    .navigationTitle("")
+                    .navigationTitle(RootTab.match.title)
                     .navigationBarTitleDisplayMode(.inline)
+                    .toolbar(.hidden, for: .navigationBar)
                     .listStyle(.insetGrouped)
                     .alert("Batch Info", isPresented: $homeViewModel.showBatchInfoPopup) {
                         Button("OK", role: .cancel) {}
                     } message: {
-                        Text("Sliding to enroll locks availability, criteria, and referral network for this week. Edits afterward apply next week. Each week's batch closes Sunday @ 11:59 PM local time.")
+                        Text("Sliding to enroll locks availability, criteria, and referral network for next week. Edits afterward apply to later batches. Each batch closes Sunday @ 11:59 PM local time.")
                     }
                     .onDisappear {
                         homeViewModel.cancelMatchSimulation()
@@ -35,6 +36,7 @@ struct RootView: View {
                     }
                     .navigationDestination(for: RootDestination.self) { destination in
                         rootDestination(for: destination)
+                            .toolbar(.visible, for: .navigationBar)
                     }
                 }
             }
@@ -42,8 +44,12 @@ struct RootView: View {
             Tab("Profile", systemImage: RootTab.profile.systemImage, value: RootTab.profile) {
                 NavigationStack(path: $router.profilePath) {
                     ProfileTabView(appState: appState)
+                        .navigationTitle(RootTab.profile.title)
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar(.hidden, for: .navigationBar)
                         .navigationDestination(for: RootDestination.self) { destination in
                             rootDestination(for: destination)
+                                .toolbar(.visible, for: .navigationBar)
                         }
                 }
             }
@@ -56,8 +62,12 @@ struct RootView: View {
                     ) {
                         router.dismissSearch()
                     }
+                    .navigationTitle(RootTab.search.title)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar(.hidden, for: .navigationBar)
                     .navigationDestination(for: RootDestination.self) { destination in
                         rootDestination(for: destination)
+                            .toolbar(.visible, for: .navigationBar)
                     }
                 }
             }
@@ -108,7 +118,7 @@ struct RootView: View {
             }
         } header: {
             HStack(spacing: 6) {
-                Text("This Week")
+                Text("Next Week")
                 Button {
                     homeViewModel.showBatchInfoPopup = true
                 } label: {
@@ -164,10 +174,10 @@ struct RootView: View {
             matchAvatar(size: 56)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(profile.name)
+                Text("Meet Your Match")
                     .font(.headline)
                     .foregroundStyle(.primary)
-                Text("This week's match")
+                Text("This week's match details and meeting plan")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -465,7 +475,7 @@ private struct MatchProfileView: View {
                         Text(profile.name)
                             .font(.headline)
                             .foregroundStyle(.primary)
-                        Text("This week's match")
+                        Text("This week's match details and meeting plan")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
