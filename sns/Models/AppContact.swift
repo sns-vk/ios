@@ -22,6 +22,7 @@ struct AppContact: Identifiable, Hashable {
     let id = UUID()
     var firstName: String
     var lastName: String
+    var nickname: String
     var photoData: Data?
     var bio: String
     var phone: String
@@ -68,6 +69,7 @@ struct AppContact: Identifiable, Hashable {
         let parts = trimmed.split(separator: " ", maxSplits: 1).map(String.init)
         self.firstName = parts.first ?? ""
         self.lastName = parts.count > 1 ? parts[1] : ""
+        self.nickname = ""
         self.photoData = nil
         self.bio = ""
         self.phone = ""

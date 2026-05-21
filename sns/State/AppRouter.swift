@@ -63,6 +63,7 @@ enum RootDestination: Hashable {
     case page(RootSearchPage)
     case profileField(ProfileField)
     case profileSubstanceUse(SubstanceUseCategory)
+    case sharingField(ProfileDisclosureField)
     case matchSubstanceUse(SubstanceUseCategory)
     case contact(AppContact.ID)
     case myCard
@@ -79,7 +80,7 @@ enum RootTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .match: "Match"
+        case .match: "Home"
         case .profile: "Profile"
         case .search: "Search"
         }
@@ -166,6 +167,9 @@ enum RootSearchPage: String, CaseIterable, Identifiable {
 }
 
 enum ProfileField: String, Hashable {
+    case firstName
+    case lastName
+    case nickname
     case age
     case gender
     case pronouns
@@ -173,6 +177,9 @@ enum ProfileField: String, Hashable {
 
     var title: String {
         switch self {
+        case .firstName: "First Name"
+        case .lastName: "Last Name"
+        case .nickname: "Nickname"
         case .age: "Age"
         case .gender: "Gender"
         case .pronouns: "Pronouns"

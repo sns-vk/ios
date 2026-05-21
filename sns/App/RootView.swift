@@ -12,7 +12,7 @@ struct RootView: View {
             get: { router.selectedTab },
             set: { router.select($0) }
         )) {
-            Tab("Match", systemImage: RootTab.match.systemImage, value: RootTab.match) {
+            Tab(RootTab.match.title, systemImage: RootTab.match.systemImage, value: RootTab.match) {
                 NavigationStack(path: $router.matchPath) {
                     List {
                         matchSections
@@ -275,9 +275,10 @@ struct RootView: View {
         case .profileSubstanceUse(let category):
             AccountSubstanceUseView(
                 category: category,
-                selection: substanceUseBinding(for: category),
-                isShared: sharedProfileFieldBinding(for: .substanceUse(category))
+                selection: substanceUseBinding(for: category)
             )
+        case .sharingField(let field):
+            SharingFieldView(appState: appState, field: field)
         case .matchSubstanceUse(let category):
             MatchSubstanceUsePreferenceView(
                 category: category,
@@ -290,7 +291,7 @@ struct RootView: View {
                 Text("Contact unavailable")
             }
         case .myCard:
-            MyCardDetailView(contact: $appState.myCard)
+            SharingCardView(appState: appState)
         case .matchCriteria:
             MatchCriteriaView(appState: appState, isEnrolledInBatch: isEnrolledInBatch)
         case .weeklyBatchAvailability:
@@ -351,25 +352,40 @@ struct RootView: View {
     @ViewBuilder
     private func profileFieldDestination(for field: ProfileField) -> some View {
         switch field {
+        case .firstName:
+            AccountTextFieldView(
+                title: field.title,
+                text: $appState.myCard.firstName,
+                textContentType: .givenName
+            )
+        case .lastName:
+            AccountTextFieldView(
+                title: field.title,
+                text: $appState.myCard.lastName,
+                textContentType: .familyName
+            )
+        case .nickname:
+            AccountTextFieldView(
+                title: field.title,
+                text: $appState.myCard.nickname,
+                textContentType: .nickname
+            )
         case .age:
-            AccountAgeView(age: $appState.age, isShared: sharedProfileFieldBinding(for: .age))
+            AccountAgeView(age: $appState.age)
         case .gender:
             AccountSingleSelectView(
                 title: field.title,
-                selection: $appState.gender,
-                isShared: sharedProfileFieldBinding(for: .gender)
+                selection: $appState.gender
             )
         case .pronouns:
             AccountSingleSelectView(
                 title: field.title,
-                selection: $appState.pronouns,
-                isShared: sharedProfileFieldBinding(for: .pronouns)
+                selection: $appState.pronouns
             )
         case .sexuality:
             AccountSingleSelectView(
                 title: field.title,
-                selection: $appState.sexuality,
-                isShared: sharedProfileFieldBinding(for: .sexuality)
+                selection: $appState.sexuality
             )
         }
     }

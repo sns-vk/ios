@@ -63,6 +63,7 @@ struct snsTests {
             myCard: AppContact(name: "My Name"),
             contacts: [enabledContact, disabledContact],
             groups: [],
+            sharedContactFields: [],
             sharedProfileFields: []
         )
 
@@ -80,6 +81,7 @@ struct snsTests {
             myCard: AppContact(name: "My Name"),
             contacts: [contact],
             groups: [AppGroup(name: "Study Group", members: [])],
+            sharedContactFields: [],
             sharedProfileFields: []
         )
 
@@ -199,6 +201,7 @@ struct snsTests {
             myCard: AppContact(name: "My Name"),
             contacts: [],
             groups: [],
+            sharedContactFields: [],
             sharedProfileFields: [],
             matchCriteriaUpdatedAt: staleDate
         )

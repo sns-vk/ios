@@ -97,6 +97,9 @@ enum SubstanceUseAnswer: String, ProfileCriteriaOption {
 }
 
 enum ProfileDisclosureField: Hashable, Sendable {
+    case firstName
+    case lastName
+    case nickname
     case age
     case gender
     case pronouns
@@ -410,6 +413,7 @@ final class AppState {
     var pronouns: PronounOption
     var sexuality: SexualityOption
     var substanceUse: [SubstanceUseCategory: SubstanceUseAnswer]
+    var sharedContactFields: Set<ProfileDisclosureField>
     var sharedProfileFields: Set<ProfileDisclosureField>
     var preferredGenders: Set<GenderIdentity> {
         didSet { markMatchCriteriaEditedIfChanged(from: oldValue, to: preferredGenders) }
@@ -455,6 +459,7 @@ final class AppState {
         pronouns: PronounOption = .sheHer,
         sexuality: SexualityOption = .notListed,
         substanceUse: [SubstanceUseCategory: SubstanceUseAnswer] = [:],
+        sharedContactFields: Set<ProfileDisclosureField>,
         sharedProfileFields: Set<ProfileDisclosureField>,
         preferredGenders: Set<GenderIdentity> = Set(GenderIdentity.allCases),
         preferredSexualities: Set<SexualityOption> = Set(SexualityOption.allCases),
@@ -479,6 +484,7 @@ final class AppState {
         self.pronouns = pronouns
         self.sexuality = sexuality
         self.substanceUse = substanceUse
+        self.sharedContactFields = sharedContactFields
         self.sharedProfileFields = sharedProfileFields
         self.preferredGenders = preferredGenders
         self.preferredSexualities = preferredSexualities
@@ -499,6 +505,7 @@ final class AppState {
             myCard: AppContact(name: "My Name"),
             contacts: MockData.contacts,
             groups: MockData.groups,
+            sharedContactFields: [],
             sharedProfileFields: []
         )
     }

@@ -22,22 +22,39 @@ struct ProfileTabView: View {
                         MyCardAvatarView(contact: appState.myCard, size: 56)
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(appState.myCard.name)
+                            Text(profileValue(appState.myCard.name))
                                 .font(.headline)
                                 .foregroundStyle(.primary)
-                            Text("My Card")
+                            Text("Sharing Card")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
                     }
                     .padding(.vertical, 6)
                 }
-                .accessibilityIdentifier("My Card Row")
+                .accessibilityIdentifier("Sharing Card Row")
             } footer: {
-                Text("Shared when adding a contact.")
+                Text("What is shared to your match and when.")
             }
 
-            Section("Account") {
+            Section("Name") {
+                NavigationLink(value: RootDestination.profileField(.firstName)) {
+                    preferenceValueRow(title: "First Name", value: profileValue(appState.myCard.firstName), systemImage: "person.text.rectangle")
+                }
+                .accessibilityIdentifier("Account First Name Row")
+
+                NavigationLink(value: RootDestination.profileField(.lastName)) {
+                    preferenceValueRow(title: "Last Name", value: profileValue(appState.myCard.lastName), systemImage: "person.text.rectangle")
+                }
+                .accessibilityIdentifier("Account Last Name Row")
+
+                NavigationLink(value: RootDestination.profileField(.nickname)) {
+                    preferenceValueRow(title: "Nickname", value: profileValue(appState.myCard.nickname), systemImage: "quote.bubble")
+                }
+                .accessibilityIdentifier("Account Nickname Row")
+            }
+
+            Section("Demographics") {
                 NavigationLink(value: RootDestination.profileField(.age)) {
                     preferenceValueRow(title: "Age", value: "\(appState.age)", systemImage: "number")
                 }
@@ -60,10 +77,16 @@ struct ProfileTabView: View {
             }
 
             Section("Substance Use") {
-                substanceUseRows(
-                    selection: appState.substanceUse,
-                    accessibilityPrefix: "Account"
-                )
+                ForEach(Array(SubstanceUseCategory.allCases), id: \.self) { substance in
+                    NavigationLink(value: RootDestination.profileSubstanceUse(substance)) {
+                        preferenceValueRow(
+                            title: substance.label,
+                            value: appState.substanceUse[substance, default: .no].label,
+                            systemImage: substance.systemImage
+                        )
+                    }
+                    .accessibilityIdentifier("Account \(substance.label) Substance Use Row")
+                }
             }
 
             Section("Logbook") {
@@ -74,6 +97,11 @@ struct ProfileTabView: View {
             }
         }
         .listStyle(.insetGrouped)
+    }
+
+    private func profileValue(_ value: String) -> String {
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? "Not set" : trimmedValue
     }
 
     private func preferenceValueRow(title: String, value: String, systemImage: String) -> some View {
@@ -92,76 +120,228 @@ struct ProfileTabView: View {
         }
     }
 
-    private func substanceUseRows(
-        selection: [SubstanceUseCategory: SubstanceUseAnswer],
-        accessibilityPrefix: String
-    ) -> some View {
-        ForEach(Array(SubstanceUseCategory.allCases), id: \.self) { substance in
-            NavigationLink(value: RootDestination.profileSubstanceUse(substance)) {
-                preferenceValueRow(
-                    title: substance.label,
-                    value: selection[substance, default: .no].label,
-                    systemImage: substance.systemImage
+}
+
+struct SharingCardView: View {
+    @Bindable var appState: AppState
+
+    var body: some View {
+        List {
+            Section("Name") {
+                sharingCardRow(
+                    title: "First Name",
+                    systemImage: "person.text.rectangle",
+                    sharedField: .firstName,
+                    accessibilityIdentifier: "Sharing Card First Name Row"
+                )
+
+                sharingCardRow(
+                    title: "Last Name",
+                    systemImage: "person.text.rectangle",
+                    sharedField: .lastName,
+                    accessibilityIdentifier: "Sharing Card Last Name Row"
+                )
+
+                sharingCardRow(
+                    title: "Nickname",
+                    systemImage: "quote.bubble",
+                    sharedField: .nickname,
+                    accessibilityIdentifier: "Sharing Card Nickname Row"
                 )
             }
-            .accessibilityIdentifier("\(accessibilityPrefix) \(substance.label) Substance Use Row")
+
+            Section("Demographics") {
+                sharingCardRow(
+                    title: "Age",
+                    systemImage: "number",
+                    sharedField: .age,
+                    accessibilityIdentifier: "Sharing Card Age Row"
+                )
+
+                sharingCardRow(
+                    title: "Gender",
+                    systemImage: "person.fill",
+                    sharedField: .gender,
+                    accessibilityIdentifier: "Sharing Card Gender Row"
+                )
+
+                sharingCardRow(
+                    title: "Pronouns",
+                    systemImage: "text.bubble",
+                    sharedField: .pronouns,
+                    accessibilityIdentifier: "Sharing Card Pronouns Row"
+                )
+
+                sharingCardRow(
+                    title: "Sexuality",
+                    systemImage: "heart.circle",
+                    sharedField: .sexuality,
+                    accessibilityIdentifier: "Sharing Card Sexuality Row"
+                )
+            }
+
+            Section {
+                ForEach(Array(SubstanceUseCategory.allCases), id: \.self) { substance in
+                    sharingCardRow(
+                        title: substance.label,
+                        systemImage: substance.systemImage,
+                        sharedField: .substanceUse(substance),
+                        accessibilityIdentifier: "Sharing Card \(substance.label) Substance Use Row"
+                    )
+                }
+            } header: {
+                Text("Substance Use")
+            }
+        }
+        .navigationTitle("Sharing Card")
+        .navigationBarTitleDisplayMode(.inline)
+        .listStyle(.insetGrouped)
+    }
+
+    private func sharingCardRow(
+        title: String,
+        systemImage: String,
+        sharedField: ProfileDisclosureField,
+        accessibilityIdentifier: String
+    ) -> some View {
+        NavigationLink(value: RootDestination.sharingField(sharedField)) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22)
+
+                Text(title)
+
+                Spacer()
+
+                Text(disclosureState(for: sharedField).summary)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+            }
+        }
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    private func disclosureState(for field: ProfileDisclosureField) -> SharingDisclosureState {
+        SharingDisclosureState(
+            isSharedWhenMatched: appState.sharedProfileFields.contains(field),
+            isSharedWhenAddingContact: appState.sharedContactFields.contains(field)
+        )
+    }
+}
+
+struct SharingFieldView: View {
+    @Bindable var appState: AppState
+    let field: ProfileDisclosureField
+
+    var body: some View {
+        List {
+            Section {
+                sharingOptionRow(
+                    title: "Not shared",
+                    state: .notShared,
+                    accessibilityIdentifier: "Sharing \(field.title) Not Shared Row"
+                )
+                sharingOptionRow(
+                    title: "Match and contact",
+                    state: .matched,
+                    accessibilityIdentifier: "Sharing \(field.title) Matched Row"
+                )
+                sharingOptionRow(
+                    title: "Contact only",
+                    state: .contact,
+                    accessibilityIdentifier: "Sharing \(field.title) Contact Row"
+                )
+            } header: {
+                Text(field.title)
+            } footer: {
+                Text("Fields shared with matches are also shared when adding a contact.")
+            }
+        }
+        .navigationTitle(field.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .listStyle(.insetGrouped)
+    }
+
+    private func sharingOptionRow(
+        title: String,
+        state: SharingDisclosureState,
+        accessibilityIdentifier: String
+    ) -> some View {
+        Button {
+            setDisclosureState(state)
+        } label: {
+            HStack {
+                Image(systemName: currentState == state ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(currentState == state ? Color.accentColor : Color.secondary)
+
+                Text(title)
+                    .foregroundStyle(.primary)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    private var currentState: SharingDisclosureState {
+        SharingDisclosureState(
+            isSharedWhenMatched: appState.sharedProfileFields.contains(field),
+            isSharedWhenAddingContact: appState.sharedContactFields.contains(field)
+        )
+    }
+
+    private func setDisclosureState(_ state: SharingDisclosureState) {
+        appState.sharedProfileFields.remove(field)
+        appState.sharedContactFields.remove(field)
+
+        switch state {
+        case .notShared:
+            break
+        case .matched:
+            appState.sharedProfileFields.insert(field)
+            appState.sharedContactFields.insert(field)
+        case .contact:
+            appState.sharedContactFields.insert(field)
         }
     }
 }
 
-struct MyCardDetailView: View {
-    @Binding var contact: AppContact
-    @State private var isEditing = false
+enum SharingDisclosureState: Equatable {
+    case notShared
+    case matched
+    case contact
 
-    var body: some View {
-        Form {
-            if isEditing {
-                Section("Name") {
-                    TextField("First Name", text: $contact.firstName)
-                        .textContentType(.givenName)
-                        .accessibilityIdentifier("My Card First Name Field")
-                    TextField("Last Name", text: $contact.lastName)
-                        .textContentType(.familyName)
-                        .accessibilityIdentifier("My Card Last Name Field")
-                }
-
-                Section("Notes") {
-                    TextEditor(text: $contact.notes)
-                        .frame(minHeight: 120)
-                        .accessibilityIdentifier("My Card Notes Field")
-                }
-            } else {
-                Section("Name") {
-                    detailRow(title: "First Name", value: contact.firstName)
-                    detailRow(title: "Last Name", value: contact.lastName)
-                }
-
-                Section("Notes") {
-                    Text(contact.notes)
-                }
-            }
-        }
-        .navigationTitle("My Card")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(isEditing ? "Done" : "Edit") {
-                    isEditing.toggle()
-                }
-            }
+    init(isSharedWhenMatched: Bool, isSharedWhenAddingContact: Bool) {
+        if isSharedWhenMatched {
+            self = .matched
+        } else if isSharedWhenAddingContact {
+            self = .contact
+        } else {
+            self = .notShared
         }
     }
 
-    @ViewBuilder
-    private func detailRow(title: String, value: String) -> some View {
-        if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(value)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-            }
+    var summary: String {
+        switch self {
+        case .notShared: "Not shared"
+        case .matched: "Match + contact"
+        case .contact: "Contact only"
+        }
+    }
+}
+
+extension ProfileDisclosureField {
+    var title: String {
+        switch self {
+        case .firstName: "First Name"
+        case .lastName: "Last Name"
+        case .nickname: "Nickname"
+        case .age: "Age"
+        case .gender: "Gender"
+        case .pronouns: "Pronouns"
+        case .sexuality: "Sexuality"
+        case .substanceUse(let category): category.label
         }
     }
 }
@@ -214,7 +394,7 @@ struct AccountProfileView: View {
 
     var body: some View {
         Form {
-            Section("Account") {
+            Section("Demographics") {
                 Stepper(value: $age, in: AgeDisplay.bounds) {
                     valueRow(title: "Age", value: AgeDisplay.label(for: age))
                 }
@@ -249,7 +429,7 @@ struct AccountProfileView: View {
                 }
             }
         }
-        .navigationTitle("Account")
+        .navigationTitle("Demographics")
     }
 
     private func valueRow(title: String, value: String) -> some View {
@@ -264,7 +444,6 @@ struct AccountProfileView: View {
 
 struct AccountAgeView: View {
     @Binding var age: Int
-    @Binding var isShared: Bool
 
     var body: some View {
         Form {
@@ -291,17 +470,31 @@ struct AccountAgeView: View {
                 }
                 .padding(.vertical, 6)
             }
-
-            ProfileDisclosureSection(isShared: $isShared)
         }
         .navigationTitle("Age")
+    }
+}
+
+struct AccountTextFieldView: View {
+    let title: String
+    @Binding var text: String
+    let textContentType: UITextContentType
+
+    var body: some View {
+        Form {
+            Section {
+                TextField(title, text: $text)
+                    .textContentType(textContentType)
+                    .accessibilityIdentifier("Account \(title) Field")
+            }
+        }
+        .navigationTitle(title)
     }
 }
 
 struct AccountSingleSelectView<Option: ProfileCriteriaOption>: View {
     let title: String
     @Binding var selection: Option
-    @Binding var isShared: Bool
 
     var body: some View {
         Form {
@@ -325,8 +518,6 @@ struct AccountSingleSelectView<Option: ProfileCriteriaOption>: View {
             } header: {
                 Text(title)
             }
-
-            ProfileDisclosureSection(isShared: $isShared)
         }
         .navigationTitle(title)
     }
@@ -335,13 +526,11 @@ struct AccountSingleSelectView<Option: ProfileCriteriaOption>: View {
 struct AccountSubstanceUseView: View {
     let category: SubstanceUseCategory
     @Binding var selection: SubstanceUseAnswer
-    @Binding var isShared: Bool
 
     var body: some View {
         SubstanceUseAnswerView(
             title: category.label,
-            selection: $selection,
-            isShared: $isShared
+            selection: $selection
         )
     }
 }
@@ -534,7 +723,6 @@ struct MultiSelectOptionsView<Option: ProfileCriteriaOption>: View {
 struct SubstanceUseAnswerView: View {
     let title: String
     @Binding var selection: SubstanceUseAnswer
-    var isShared: Binding<Bool>?
 
     var body: some View {
         Form {
@@ -559,33 +747,8 @@ struct SubstanceUseAnswerView: View {
                     .accessibilityIdentifier("\(title) \(option.label) Substance Use Option")
                 }
             }
-
-            if let isShared {
-                ProfileDisclosureSection(isShared: isShared)
-            }
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-private struct ProfileDisclosureSection: View {
-    @Binding var isShared: Bool
-
-    var body: some View {
-        Section {
-            Button {
-                isShared.toggle()
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: isShared ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(isShared ? Color.accentColor : Color.secondary)
-
-                    Text("Share with matched person")
-                        .foregroundStyle(.primary)
-                }
-            }
-            .buttonStyle(.plain)
-        }
     }
 }
