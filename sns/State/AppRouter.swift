@@ -67,6 +67,7 @@ enum RootDestination: Hashable {
     case matchSubstanceUse(SubstanceUseCategory)
     case contact(AppContact.ID)
     case myCard
+    case matchProfile
     case matchCriteria
     case weeklyBatchAvailability
 }

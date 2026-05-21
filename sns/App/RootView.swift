@@ -115,86 +115,66 @@ struct RootView: View {
     @ViewBuilder
     private var matchHero: some View {
         if homeViewModel.hasMatchThisWeek {
-            anonymousMatchProfile(profile: homeViewModel.matchProfile)
+            NavigationLink(value: RootDestination.matchProfile) {
+                anonymousMatchProfile(profile: homeViewModel.matchProfile)
+            }
+            .accessibilityIdentifier("Weekly Match Row")
         } else {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 14) {
-                    Image(systemName: "tray")
-                        .font(.system(size: 30, weight: .regular))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 56, height: 56)
+            HStack(alignment: .center, spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(Color.accentColor.opacity(0.16))
+
+                    Image(systemName: "tray.fill")
+                        .font(.system(size: 28, weight: .regular))
+                        .foregroundStyle(Color.accentColor)
                         .accessibilityLabel("No Match Mailbox Icon")
                         .accessibilityIdentifier("No Match Mailbox Icon")
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("No match yet")
-                            .font(.headline)
-                        Text("Your weekly match will appear here after release.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
                 }
+                .frame(width: 56, height: 56)
 
-                Divider()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Sunday release", systemImage: "calendar")
-                    Label("Meeting details unavailable", systemImage: "mappin.and.ellipse")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("No match yet")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text("Your weekly match will appear here after release.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .symbolRenderingMode(.hierarchical)
             }
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: 132)
-            .padding(10)
+            .padding(.vertical, 6)
             .accessibilityIdentifier("No Match Empty State")
         }
     }
 
     private func anonymousMatchProfile(profile: AnonymousMatchProfile) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 14) {
-                matchAvatar
+        HStack(alignment: .center, spacing: 14) {
+            matchAvatar(size: 56)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(profile.name)
-                        .font(.headline)
-                    Text("This week's match")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
+            VStack(alignment: .leading, spacing: 3) {
+                Text(profile.name)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text("This week's match")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Label("\(profile.age) · \(profile.pronouns) · \(profile.neighborhood)", systemImage: "person.text.rectangle")
-                Label("Thursday, 3:00-3:30 PM", systemImage: "clock")
-                Label("Hayes Cafe Mock Spot", systemImage: "mappin.and.ellipse")
-            }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .symbolRenderingMode(.hierarchical)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(minHeight: 132, alignment: .center)
-        .padding(10)
+        .padding(.vertical, 6)
         .accessibilityIdentifier("Anonymous Match Profile")
     }
 
-    private var matchAvatar: some View {
-        Image(systemName: "person.crop.circle.fill")
-            .resizable()
-            .scaledToFit()
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(.secondary)
-            .accessibilityIdentifier("Anonymous Match Default Avatar")
-        .frame(width: 52, height: 52)
+    private func matchAvatar(size: CGFloat) -> some View {
+        ZStack {
+            Circle()
+                .fill(Color.accentColor.opacity(0.16))
+
+            Image(systemName: "person.crop.circle.fill")
+                .font(.system(size: size * 0.72, weight: .regular))
+                .foregroundStyle(Color.accentColor)
+                .accessibilityIdentifier("Anonymous Match Default Avatar")
+        }
+        .frame(width: size, height: size)
     }
 
     private var availabilityRow: some View {
@@ -294,6 +274,8 @@ struct RootView: View {
             }
         case .myCard:
             SharingCardView(appState: appState)
+        case .matchProfile:
+            MatchProfileView(profile: homeViewModel.matchProfile)
         case .matchCriteria:
             MatchCriteriaView(appState: appState, isEnrolledInBatch: isEnrolledInBatch)
         case .weeklyBatchAvailability:
@@ -432,6 +414,85 @@ struct RootView: View {
                 appState.acceptedSubstanceUse[category] = newValue
             }
         )
+    }
+}
+
+private struct MatchProfileView: View {
+    let profile: AnonymousMatchProfile
+
+    var body: some View {
+        List {
+            Section {
+                HStack(alignment: .center, spacing: 14) {
+                    matchAvatar(size: 56)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(profile.name)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        Text("This week's match")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+
+            Section("Meeting") {
+                matchDetailRow(title: "Date & Time", value: "Thursday, 3:00-3:30 PM", systemImage: "clock")
+                matchDetailRow(title: "Address", value: "Hayes Cafe Mock Spot", systemImage: "mappin.and.ellipse")
+            }
+
+            Section("Profile") {
+                matchDetailRow(title: "Age", value: "\(profile.age)", systemImage: "number")
+                matchDetailRow(title: "Pronouns", value: profile.pronouns, systemImage: "text.bubble")
+                matchDetailRow(title: "Neighborhood", value: profile.neighborhood, systemImage: "location")
+            }
+
+            Section("About") {
+                Text(profile.bio)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Interests") {
+                ForEach(profile.interests, id: \.self) { interest in
+                    Text(interest)
+                }
+            }
+        }
+        .navigationTitle(profile.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .listStyle(.insetGrouped)
+        .accessibilityIdentifier("Weekly Match Detail")
+    }
+
+    private func matchDetailRow(title: String, value: String, systemImage: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
+
+            Text(title)
+
+            Spacer()
+
+            Text(value)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    private func matchAvatar(size: CGFloat) -> some View {
+        ZStack {
+            Circle()
+                .fill(Color.accentColor.opacity(0.16))
+
+            Image(systemName: "person.crop.circle.fill")
+                .font(.system(size: size * 0.72, weight: .regular))
+                .foregroundStyle(Color.accentColor)
+                .accessibilityIdentifier("Weekly Match Default Avatar")
+        }
+        .frame(width: size, height: size)
     }
 }
 
