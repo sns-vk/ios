@@ -29,29 +29,32 @@ struct ContactsView: View {
     var body: some View {
         List {
             ForEach(groupedContacts, id: \.key) { section in
-                Text(section.key)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
+                Section {
+                    ForEach(section.value) { contact in
+                        NavigationLink {
+                            if let contactIndex = appState.contacts.firstIndex(where: { $0.id == contact.id }) {
+                                ContactDetailView(contact: $appState.contacts[contactIndex], groups: $appState.groups)
+                            } else {
+                                Text("Contact unavailable")
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "person.crop.circle.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(.secondary)
 
-                ForEach(section.value) { contact in
-                    NavigationLink {
-                        if let contactIndex = appState.contacts.firstIndex(where: { $0.id == contact.id }) {
-                            ContactDetailView(contact: $appState.contacts[contactIndex], groups: $appState.groups)
-                        } else {
-                            Text("Contact unavailable")
+                                Text(contact.name)
+                            }
+                            .padding(.vertical, 2)
                         }
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "person.crop.circle.fill")
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-
-                            Text(contact.name)
-                        }
-                        .padding(.vertical, 2)
                     }
+                } header: {
+                    Text(section.key)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
                 }
+                .listSectionSeparator(.hidden, edges: .top)
             }
         }
         .listStyle(.plain)
