@@ -3,135 +3,43 @@ import SwiftUI
 struct GroupsView: View {
     @Binding var groups: [AppGroup]
     let allContacts: [AppContact]
-    @State private var searchText = ""
     @State private var selectedGroupIndex: Int?
-    @State private var isEditingGroups = false
-    @State private var editMode: EditMode = .inactive
-    @State private var showPriorityInfo = false
-    @State private var showAddGroupAlert = false
-    @State private var newGroupName = ""
-    @State private var pendingDeleteGroupIndex: Int?
+    @State private var isShowingCreateGroup = false
 
     private var filteredGroupIndices: [Int] {
-        groups.indices.filter { index in
-            searchText.isEmpty || groups[index].name.localizedCaseInsensitiveContains(searchText)
-        }
+        Array(groups.indices)
     }
 
     var body: some View {
         List {
             ForEach(filteredGroupIndices, id: \.self) { index in
-                HStack(spacing: 12) {
-                    if isEditingGroups {
-                        Button {
-                            pendingDeleteGroupIndex = index
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .foregroundStyle(.red)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    Image(systemName: "person.2.fill")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-
-                    if isEditingGroups {
-                        Text(groups[index].name)
-                            .foregroundStyle(.primary)
-                    } else {
-                        Button {
-                            selectedGroupIndex = index
-                        } label: {
-                            Text(groups[index].name)
-                                .foregroundStyle(.primary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-            .onMove { fromOffsets, toOffset in
-                guard searchText.isEmpty else { return }
-                groups.move(fromOffsets: fromOffsets, toOffset: toOffset)
-            }
-        }
-        .listStyle(.plain)
-        .searchable(
-            text: $searchText,
-            placement: .navigationBarDrawer(displayMode: .always),
-            prompt: "Search Groups"
-        )
-        .environment(\.editMode, $editMode)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    showPriorityInfo = true
-                } label: {
-                    Image(systemName: "info.circle")
-                }
-                .accessibilityLabel("Group Priority Info")
-            }
-
-            if isEditingGroups {
-                ToolbarItem(placement: .topBarTrailing) {
+                Section {
                     Button {
-                        showAddGroupAlert = true
+                        selectedGroupIndex = index
                     } label: {
-                        Image(systemName: "plus")
+                        GroupRow(group: groups[index])
                     }
-                    .accessibilityLabel("Create Group")
+                    .buttonStyle(.plain)
+                    .listRowInsets(EdgeInsets(top: 14, leading: 18, bottom: 14, trailing: 18))
                 }
+                .listSectionSeparator(.hidden, edges: .top)
             }
-
+        }
+        .listStyle(.insetGrouped)
+        .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button(isEditingGroups ? "Done" : "Edit") {
-                    withAnimation {
-                        let newValue = !isEditingGroups
-                        isEditingGroups = newValue
-                        editMode = newValue ? .active : .inactive
-                    }
+                Button {
+                    isShowingCreateGroup = true
+                } label: {
+                    Image(systemName: "plus")
                 }
+                .accessibilityLabel("Create Group")
             }
         }
-        .alert("Group Priority", isPresented: $showPriorityInfo) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Higher-priority groups are favored more when a match is connected through that group.")
-        }
-        .alert("Add Group", isPresented: $showAddGroupAlert) {
-            TextField("Group name", text: $newGroupName)
-            Button("Cancel", role: .cancel) {
-                newGroupName = ""
+        .fullScreenCover(isPresented: $isShowingCreateGroup) {
+            CreateGroupView { name in
+                groups.insert(AppGroup(name: name, members: []), at: 0)
             }
-            Button("Add") {
-                let trimmedName = newGroupName.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmedName.isEmpty else { return }
-                groups.insert(AppGroup(name: trimmedName, members: []), at: 0)
-                newGroupName = ""
-            }
-        } message: {
-            Text("Create a new group.")
-        }
-        .alert("Delete Group?", isPresented: Binding(
-            get: { pendingDeleteGroupIndex != nil },
-            set: { isPresented in
-                if !isPresented {
-                    pendingDeleteGroupIndex = nil
-                }
-            }
-        )) {
-            Button("Cancel", role: .cancel) {
-                pendingDeleteGroupIndex = nil
-            }
-            Button("Delete", role: .destructive) {
-                if let pendingDeleteGroupIndex, groups.indices.contains(pendingDeleteGroupIndex) {
-                    groups.remove(at: pendingDeleteGroupIndex)
-                }
-                pendingDeleteGroupIndex = nil
-            }
-        } message: {
-            Text("This action cannot be undone.")
         }
         .sheet(isPresented: Binding(
             get: { selectedGroupIndex != nil },
@@ -147,6 +55,115 @@ struct GroupsView: View {
                     .presentationDragIndicator(.visible)
             }
         }
+    }
+}
+
+private struct GroupRow: View {
+    let group: AppGroup
+
+    private var memberSummary: String {
+        guard !group.members.isEmpty else { return "No contacts yet" }
+
+        return group.members
+            .map(\.name)
+            .joined(separator: ", ")
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            GroupAvatar(name: group.name)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(group.name)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                Text(memberSummary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            Spacer(minLength: 12)
+
+            Image(systemName: "chevron.right")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct GroupAvatar: View {
+    let name: String
+
+    private var initials: String {
+        let initials = name
+            .split(separator: " ")
+            .prefix(2)
+            .compactMap(\.first)
+
+        let value = String(initials).uppercased()
+        return value.isEmpty ? "G" : value
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.accentColor.opacity(0.16))
+
+            Text(initials)
+                .font(.system(size: 20, weight: .semibold, design: .serif))
+                .foregroundStyle(Color.accentColor)
+        }
+        .frame(width: 56, height: 56)
+    }
+}
+
+private struct CreateGroupView: View {
+    let onCreate: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var groupName = ""
+
+    private var trimmedGroupName: String {
+        groupName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Group") {
+                    TextField("Group name", text: $groupName)
+                        .textInputAutocapitalization(.words)
+                        .submitLabel(.done)
+                        .onSubmit(createGroup)
+                }
+            }
+            .navigationTitle("New Group")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create", action: createGroup)
+                        .disabled(trimmedGroupName.isEmpty)
+                }
+            }
+        }
+    }
+
+    private func createGroup() {
+        let name = trimmedGroupName
+        guard !name.isEmpty else { return }
+
+        onCreate(name)
+        dismiss()
     }
 }
 

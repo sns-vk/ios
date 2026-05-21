@@ -5,6 +5,7 @@ struct RootView: View {
     @State private var appState = AppState.mock()
     @State private var router = AppRouter()
     @State private var homeViewModel = HomeViewModel()
+    @State private var showNetworkInfoPopup = false
 
     var body: some View {
         TabView(selection: Binding(
@@ -61,6 +62,11 @@ struct RootView: View {
             .accessibilityIdentifier("Search Tab")
         }
         .tabViewSearchActivation(.searchTabSelection)
+        .alert("Network Priority", isPresented: $showNetworkInfoPopup) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("To keep the network trustworthy, contacts can only be added in person via Bluetooth. Add contacts to groups, then reorder groups to set match priority.")
+        }
     }
 
     @ViewBuilder
@@ -219,7 +225,7 @@ struct RootView: View {
     }
 
     private var networkSection: some View {
-        Section("Network") {
+        Section {
             NavigationLink(value: RootDestination.page(.contacts)) {
                 valueRow(title: "Contacts", value: "\(appState.contacts.count)", systemImage: "person.2.fill")
             }
@@ -229,6 +235,17 @@ struct RootView: View {
                 valueRow(title: "Groups", value: "\(appState.groups.count)", systemImage: "rectangle.3.group.fill")
             }
             .accessibilityIdentifier("Groups Row")
+        } header: {
+            HStack(spacing: 6) {
+                Text("Network")
+                Button {
+                    showNetworkInfoPopup = true
+                } label: {
+                    Image(systemName: "info.circle")
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("Network Info")
+            }
         }
     }
 

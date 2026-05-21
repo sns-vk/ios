@@ -2,12 +2,70 @@ import Foundation
 
 enum MockData {
     static let contacts: [AppContact] = [
-        AppContact(name: "Ava Thompson"),
-        AppContact(name: "Noah Kim"),
-        AppContact(name: "Mia Patel"),
-        AppContact(name: "Liam Chen"),
-        AppContact(name: "Sophia Martinez"),
-        AppContact(name: "Ethan Johnson")
+        AppContact(name: "Ivory Berry"),
+        AppContact(name: "Casen Valentine"),
+        AppContact(name: "Alianna Mendez"),
+        AppContact(name: "Ahmed Ingram"),
+        AppContact(name: "Ryleigh Kramer"),
+        AppContact(name: "Abraham Combs"),
+        AppContact(name: "Braelynn Vu"),
+        AppContact(name: "Ethan Jimenez"),
+        AppContact(name: "Sara Osborne"),
+        AppContact(name: "Carter Houston"),
+        AppContact(name: "Dior Mann"),
+        AppContact(name: "Jaxson Leach"),
+        AppContact(name: "Landry Garcia"),
+        AppContact(name: "Brady Woodward"),
+        AppContact(name: "Bellamy Juarez"),
+        AppContact(name: "Grant Landry"),
+        AppContact(name: "Stormi Osborne"),
+        AppContact(name: "Manuel Klein"),
+        AppContact(name: "Marie Bell"),
+        AppContact(name: "Damien Avalos"),
+        AppContact(name: "Iris Burke"),
+        AppContact(name: "Bryan Burton"),
+        AppContact(name: "Bethany Shepard"),
+        AppContact(name: "Jaden Spence"),
+        AppContact(name: "Faye Arroyo"),
+        AppContact(name: "Watson Fisher"),
+        AppContact(name: "Ryann Roberts"),
+        AppContact(name: "Onyx Valdez"),
+        AppContact(name: "Aubriella Sellers"),
+        AppContact(name: "Ruben Mendoza"),
+        AppContact(name: "Kylee Maxwell"),
+        AppContact(name: "Jaden Avalos"),
+        AppContact(name: "Rowan Burch"),
+        AppContact(name: "Zavier White"),
+        AppContact(name: "Esmeralda Galindo"),
+        AppContact(name: "Brayan Hensley"),
+        AppContact(name: "Rosa Acosta"),
+        AppContact(name: "Ivan White"),
+        AppContact(name: "Jaelynn Sosa"),
+        AppContact(name: "Jedidiah Stein"),
+        AppContact(name: "Addison Burch"),
+        AppContact(name: "Maverick Person"),
+        AppContact(name: "Chloe Simmons"),
+        AppContact(name: "Kaiser Bravo"),
+        AppContact(name: "Joyce Stokes"),
+        AppContact(name: "Mathew Combs"),
+        AppContact(name: "London Adams"),
+        AppContact(name: "Roman Brandt"),
+        AppContact(name: "Maryam Olsen"),
+        AppContact(name: "Romeo Hoffman"),
+        AppContact(name: "London Pham"),
+        AppContact(name: "Alijah Alvarez"),
+        AppContact(name: "Joyce Yoder"),
+        AppContact(name: "Marcel Ahmed"),
+        AppContact(name: "Winter Parsons"),
+        AppContact(name: "Lance Buck"),
+        AppContact(name: "Etta Sims"),
+        AppContact(name: "Eithan Casey"),
+        AppContact(name: "Kylee Portillo"),
+        AppContact(name: "Ahmed Singh"),
+        AppContact(name: "Elliott McCoy"),
+        AppContact(name: "Andre Lim"),
+        AppContact(name: "Lennox Bell"),
+        AppContact(name: "Ambrose Santana")
     ]
 
     static let groups: [AppGroup] = [
@@ -103,7 +161,7 @@ enum MockData {
 
     static let logbookItems: [ActivityItem] = [
         ActivityItem(title: "Enrolled in this week's batch", detail: "You're in for Sunday release.", timestamp: "2h ago", symbol: "checkmark.circle.fill"),
-        ActivityItem(title: "Added Ava Thompson", detail: "New contact added to your network.", timestamp: "Yesterday", symbol: "person.badge.plus"),
+        ActivityItem(title: "Added Ivory Berry", detail: "New contact added to your network.", timestamp: "Yesterday", symbol: "person.badge.plus"),
         ActivityItem(title: "Created Weekend Hikes", detail: "Group now has 5 members.", timestamp: "2d ago", symbol: "person.2.fill"),
         ActivityItem(title: "Updated discovery preferences", detail: "Age range updated to 21-27.", timestamp: "3d ago", symbol: "slider.horizontal.3")
     ]
@@ -116,34 +174,34 @@ enum MockData {
 
     static let mailThreads: [MailThread] = [
         MailThread(
-            correspondentName: "Ava Thompson",
+            correspondentName: "Ivory Berry",
             subject: "Coffee after the batch?",
             preview: "I might be near Hayes Valley later this week.",
             timestamp: "Today",
             isUnread: true,
             messages: [
-                MailMessage(senderName: "Ava Thompson", body: "I might be near Hayes Valley later this week. Want to find a quiet coffee spot?", timestamp: "Today, 9:12 AM", isFromUser: false),
+                MailMessage(senderName: "Ivory Berry", body: "I might be near Hayes Valley later this week. Want to find a quiet coffee spot?", timestamp: "Today, 9:12 AM", isFromUser: false),
                 MailMessage(senderName: "Me", body: "That sounds good. Thursday afternoon is easiest for me.", timestamp: "Today, 9:30 AM", isFromUser: true)
             ]
         ),
         MailThread(
-            correspondentName: "Noah Kim",
+            correspondentName: "Casen Valentine",
             subject: "Intro through Study Group",
             preview: "Mia said we should compare notes before Sunday.",
             timestamp: "Yesterday",
             isUnread: true,
             messages: [
-                MailMessage(senderName: "Noah Kim", body: "Mia said we should compare notes before Sunday. I can send over a short summary tonight.", timestamp: "Yesterday, 7:44 PM", isFromUser: false)
+                MailMessage(senderName: "Casen Valentine", body: "Alianna said we should compare notes before Sunday. I can send over a short summary tonight.", timestamp: "Yesterday, 7:44 PM", isFromUser: false)
             ]
         ),
         MailThread(
-            correspondentName: "Liam Chen",
+            correspondentName: "Ahmed Ingram",
             subject: "Weekend Hikes route",
             preview: "The route I mentioned is better early in the morning.",
             timestamp: "Mon",
             isUnread: false,
             messages: [
-                MailMessage(senderName: "Liam Chen", body: "The route I mentioned is better early in the morning. It gets crowded after 10.", timestamp: "Mon, 8:18 AM", isFromUser: false),
+                MailMessage(senderName: "Ahmed Ingram", body: "The route I mentioned is better early in the morning. It gets crowded after 10.", timestamp: "Mon, 8:18 AM", isFromUser: false),
                 MailMessage(senderName: "Me", body: "Good call. I will check the trail map before we pick a time.", timestamp: "Mon, 10:05 AM", isFromUser: true)
             ]
         )

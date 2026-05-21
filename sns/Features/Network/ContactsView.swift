@@ -3,7 +3,10 @@ import SwiftUI
 struct ContactsView: View {
     @Bindable var appState: AppState
     @State private var showAddContactSheet = false
-    @State private var searchText = ""
+
+    private var filteredContacts: [AppContact] {
+        appState.contacts.sorted { $0.name < $1.name }
+    }
 
     private var groupedContacts: [(key: String, value: [AppContact])] {
         let grouped = Dictionary(grouping: filteredContacts) { contact in
@@ -15,15 +18,6 @@ struct ContactsView: View {
                 (key: key, value: value.sorted { $0.name < $1.name })
             }
             .sorted { $0.key < $1.key }
-    }
-
-    private var filteredContacts: [AppContact] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return appState.contacts }
-
-        return appState.contacts.filter { contact in
-            contact.name.localizedCaseInsensitiveContains(query)
-        }
     }
 
     var body: some View {
@@ -50,19 +44,11 @@ struct ContactsView: View {
                     }
                 } header: {
                     Text(section.key)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
                 }
                 .listSectionSeparator(.hidden, edges: .top)
             }
         }
-        .listStyle(.plain)
-        .searchable(
-            text: $searchText,
-            placement: .navigationBarDrawer(displayMode: .always),
-            prompt: "Search Contacts"
-        )
+        .listStyle(.insetGrouped)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
