@@ -30,7 +30,6 @@ struct RootView: View {
                     }
                     .navigationDestination(for: RootDestination.self) { destination in
                         rootDestination(for: destination)
-                            .toolbarVisibility(.hidden, for: .tabBar)
                     }
                 }
             }
@@ -40,7 +39,6 @@ struct RootView: View {
                     ProfileTabView(appState: appState)
                         .navigationDestination(for: RootDestination.self) { destination in
                             rootDestination(for: destination)
-                                .toolbarVisibility(.hidden, for: .tabBar)
                         }
                 }
             }
@@ -55,7 +53,6 @@ struct RootView: View {
                     }
                     .navigationDestination(for: RootDestination.self) { destination in
                         rootDestination(for: destination)
-                            .toolbarVisibility(.hidden, for: .tabBar)
                     }
                 }
             }
