@@ -848,16 +848,19 @@ private struct WeeklyAvailabilityEditor: View {
     }
 
     private var visibleMonthTitle: String {
-        guard let first = visibleDates.first else {
+        guard let first = weekDates.first else {
             return "Next Week"
         }
 
-        guard let last = visibleDates.last,
-              calendar.component(.month, from: first) != calendar.component(.month, from: last) else {
-            return first.formatted(.dateTime.month(.wide))
+        guard let last = weekDates.last else {
+            return first.formatted(.dateTime.month(.wide).day())
         }
 
-        return "\(first.formatted(.dateTime.month(.wide))) / \(last.formatted(.dateTime.month(.wide)))"
+        if calendar.component(.month, from: first) == calendar.component(.month, from: last) {
+            return "\(first.formatted(.dateTime.month(.wide).day())) – \(last.formatted(.dateTime.day()))"
+        }
+
+        return "\(first.formatted(.dateTime.month(.wide).day())) – \(last.formatted(.dateTime.month(.wide).day()))"
     }
 
     var body: some View {
@@ -1500,7 +1503,7 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
                 .gesture(moveGesture)
 
             Text("\(window.startTime.formatted(date: .omitted, time: .shortened))–\(window.endTime.formatted(date: .omitted, time: .shortened))")
-                .font(.caption2.weight(.semibold))
+                .font(.caption.weight(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .foregroundStyle(.white)
