@@ -1017,8 +1017,6 @@ private struct WeeklyAvailabilityGrid: View {
                         }
                     }
                 }
-                .id(visibleStartIndex)
-                .transition(.opacity)
             }
         }
         .frame(height: weekSelectorHeight + headerHeight + visibleGridHeight)
