@@ -676,8 +676,9 @@ private struct WeeklyAvailabilityGrid: View {
     @State private var scrollOffsetY: CGFloat = 0
     @State private var autoScrollAction: AutoScrollAction?
     @State private var autoScrollDirection: Int = 0
-    @State private var autoScrollTargetY: CGFloat = 0
-    @State private var scrollToMinute: Int?
+    @State private var autoScrollVisibleY: CGFloat = 0
+    @State private var requestedScrollOffsetY: CGFloat?
+    @State private var scrollRequest: AvailabilityScrollRequest?
 
     private let timeLabelWidth: CGFloat = 50
     private let hourHeight: CGFloat = 56
@@ -687,12 +688,23 @@ private struct WeeklyAvailabilityGrid: View {
     private let autoScrollStep: CGFloat = 18
     private let activeColor = Color(red: 0.62, green: 0.10, blue: 0.32)
     private let autoScrollTimer = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
+    private let scrollViewCoordinateSpace = "AvailabilityGridScrollView"
+    private let contentCoordinateSpace = "AvailabilityGridContent"
 
     private enum AutoScrollAction: Equatable {
         case create(Date, UUID, CGFloat)
-        case move(Date, AvailabilityMinuteWindow)
-        case resizeStart(Date, AvailabilityMinuteWindow)
-        case resizeEnd(Date, AvailabilityMinuteWindow)
+        case move(Date, AvailabilityMinuteWindow, CGFloat)
+        case resizeStart(Date, AvailabilityMinuteWindow, CGFloat)
+        case resizeEnd(Date, AvailabilityMinuteWindow, CGFloat)
+    }
+
+    private struct AvailabilityScrollRequest: Equatable {
+        let id = UUID()
+        let minute: Int
+
+        init(minute: Int) {
+            self.minute = minute
+        }
     }
 
     private var calendar: Calendar {
@@ -724,17 +736,18 @@ private struct WeeklyAvailabilityGrid: View {
                             availabilityWindows(dayWidth: dayWidth)
                         }
                         .frame(width: geometry.size.width, height: contentHeight, alignment: .topLeading)
+                        .coordinateSpace(name: contentCoordinateSpace)
                     }
-                    .coordinateSpace(name: "AvailabilityGridScrollView")
+                    .coordinateSpace(name: scrollViewCoordinateSpace)
                     .frame(height: visibleGridHeight)
                     .clipped()
                     .onPreferenceChange(AvailabilityScrollOffsetKey.self) { value in
                         scrollOffsetY = max(0, -value)
                     }
-                    .onChange(of: scrollToMinute) { _, minute in
-                        guard let minute else { return }
+                    .onChange(of: scrollRequest) { _, request in
+                        guard let request else { return }
                         withAnimation(.linear(duration: 0.08)) {
-                            proxy.scrollTo(scrollAnchorID(for: minute), anchor: .top)
+                            proxy.scrollTo(scrollAnchorID(for: request.minute), anchor: .top)
                         }
                     }
                 }
@@ -809,7 +822,7 @@ private struct WeeklyAvailabilityGrid: View {
             Color.clear
                 .preference(
                     key: AvailabilityScrollOffsetKey.self,
-                    value: proxy.frame(in: .named("AvailabilityGridScrollView")).minY
+                    value: proxy.frame(in: .named(scrollViewCoordinateSpace)).minY
                 )
         }
         .frame(height: 0)
@@ -880,7 +893,7 @@ private struct WeeklyAvailabilityGrid: View {
 
     private func createGesture(for date: Date) -> some Gesture {
         LongPressGesture(minimumDuration: 0.25)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("AvailabilityGridScrollView")))
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named(contentCoordinateSpace)))
             .onChanged { value in
                 guard !isLocked else { return }
 
@@ -891,15 +904,17 @@ private struct WeeklyAvailabilityGrid: View {
                     let windowID = creatingWindowID ?? UUID()
                     creatingWindowID = windowID
                     if let dragValue {
+                        let anchorContentY = boundedContentY(dragValue.startLocation.y)
+                        let currentContentY = boundedContentY(dragValue.location.y)
                         updateCreatingWindow(
                             id: windowID,
                             on: date,
-                            anchorY: contentY(forVisibleY: dragValue.startLocation.y),
-                            currentVisibleY: dragValue.location.y
+                            anchorContentY: anchorContentY,
+                            currentContentY: currentContentY
                         )
                         updateAutoScroll(
-                            visibleY: dragValue.location.y,
-                            action: .create(date, windowID, contentY(forVisibleY: dragValue.startLocation.y))
+                            contentY: currentContentY,
+                            action: .create(date, windowID, anchorContentY)
                         )
                     }
                 default:
@@ -909,11 +924,12 @@ private struct WeeklyAvailabilityGrid: View {
             .onEnded { value in
                 if case .second(true, nil) = value, !isLocked {
                     let windowID = creatingWindowID ?? UUID()
+                    let contentY = contentY(forVisibleY: visibleGridHeight / 2)
                     updateCreatingWindow(
                         id: windowID,
                         on: date,
-                        anchorY: scrollOffsetY + (visibleGridHeight / 2),
-                        currentVisibleY: visibleGridHeight / 2
+                        anchorContentY: contentY,
+                        currentContentY: contentY
                     )
                 }
                 creatingWindowID = nil
@@ -922,15 +938,17 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private func moveGesture(for minuteWindow: AvailabilityMinuteWindow, on date: Date) -> some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named("AvailabilityGridScrollView"))
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(contentCoordinateSpace))
             .onChanged { value in
                 guard !isLocked else { return }
                 activeWindowID = minuteWindow.id
 
                 let originalWindow = movingOriginalWindow ?? minuteWindow
                 movingOriginalWindow = originalWindow
-                updateMovedWindow(originalWindow, on: date, translationY: value.translation.height)
-                updateAutoScroll(visibleY: value.location.y, action: .move(date, originalWindow))
+                let grabOffsetY = boundedContentY(value.startLocation.y) - minuteY(originalWindow.startMinute)
+                let currentContentY = boundedContentY(value.location.y)
+                updateMovedWindow(originalWindow, on: date, targetStartContentY: currentContentY - grabOffsetY)
+                updateAutoScroll(contentY: currentContentY, action: .move(date, originalWindow, grabOffsetY))
             }
             .onEnded { _ in
                 movingOriginalWindow = nil
@@ -939,15 +957,17 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private func resizeStartGesture(for minuteWindow: AvailabilityMinuteWindow, on date: Date) -> some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named("AvailabilityGridScrollView"))
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(contentCoordinateSpace))
             .onChanged { value in
                 guard !isLocked else { return }
                 activeWindowID = minuteWindow.id
 
                 let originalWindow = resizingStartOriginalWindow ?? minuteWindow
                 resizingStartOriginalWindow = originalWindow
-                updateResizedStartWindow(originalWindow, on: date, translationY: value.translation.height)
-                updateAutoScroll(visibleY: value.location.y, action: .resizeStart(date, originalWindow))
+                let grabOffsetY = boundedContentY(value.startLocation.y) - minuteY(originalWindow.startMinute)
+                let currentContentY = boundedContentY(value.location.y)
+                updateResizedStartWindow(originalWindow, on: date, targetContentY: currentContentY - grabOffsetY)
+                updateAutoScroll(contentY: currentContentY, action: .resizeStart(date, originalWindow, grabOffsetY))
             }
             .onEnded { _ in
                 resizingStartOriginalWindow = nil
@@ -956,15 +976,17 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private func resizeEndGesture(for minuteWindow: AvailabilityMinuteWindow, on date: Date) -> some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named("AvailabilityGridScrollView"))
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(contentCoordinateSpace))
             .onChanged { value in
                 guard !isLocked else { return }
                 activeWindowID = minuteWindow.id
 
                 let originalWindow = resizingEndOriginalWindow ?? minuteWindow
                 resizingEndOriginalWindow = originalWindow
-                updateResizedEndWindow(originalWindow, on: date, translationY: value.translation.height)
-                updateAutoScroll(visibleY: value.location.y, action: .resizeEnd(date, originalWindow))
+                let grabOffsetY = boundedContentY(value.startLocation.y) - minuteY(originalWindow.endMinute)
+                let currentContentY = boundedContentY(value.location.y)
+                updateResizedEndWindow(originalWindow, on: date, targetContentY: currentContentY - grabOffsetY)
+                updateAutoScroll(contentY: currentContentY, action: .resizeEnd(date, originalWindow, grabOffsetY))
             }
             .onEnded { _ in
                 resizingEndOriginalWindow = nil
@@ -972,13 +994,13 @@ private struct WeeklyAvailabilityGrid: View {
             }
     }
 
-    private func updateCreatingWindow(id: UUID, on date: Date, anchorY: CGFloat, currentVisibleY: CGFloat) {
+    private func updateCreatingWindow(id: UUID, on date: Date, anchorContentY: CGFloat, currentContentY: CGFloat) {
         let existingWindows = appState
             .availabilityMinuteWindows(on: date, calendar: calendar)
             .filter { $0.id != id }
         guard var minuteWindow = WeeklyAvailabilityGridRules.createWindowMinutes(
-            anchorMinute: minute(forContentY: anchorY),
-            currentMinute: minute(forContentY: contentY(forVisibleY: currentVisibleY)),
+            anchorMinute: minute(forContentY: anchorContentY),
+            currentMinute: minute(forContentY: currentContentY),
             existingWindows: existingWindows
         ) else {
             return
@@ -993,37 +1015,14 @@ private struct WeeklyAvailabilityGrid: View {
         appState.upsertAvailabilityWindow(minuteWindow, on: date, calendar: calendar)
     }
 
-    private func updateMovedWindow(_ originalWindow: AvailabilityMinuteWindow, on date: Date, translationY: CGFloat) {
-        let proposedStart = originalWindow.startMinute + Int((translationY / hourHeight) * 60)
+    private func updateMovedWindow(_ originalWindow: AvailabilityMinuteWindow, on date: Date, targetStartContentY: CGFloat) {
         let movedWindow = WeeklyAvailabilityGridRules.moveWindowMinutes(
-            proposedStartMinute: proposedStart,
+            proposedStartMinute: minute(forContentY: targetStartContentY),
             originalWindow: originalWindow,
             existingWindows: appState.availabilityMinuteWindows(on: date, calendar: calendar)
         )
 
         appState.upsertAvailabilityWindow(movedWindow, on: date, calendar: calendar)
-    }
-
-    private func updateMovedWindow(_ originalWindow: AvailabilityMinuteWindow, on date: Date, targetContentY: CGFloat) {
-        let duration = originalWindow.endMinute - originalWindow.startMinute
-        let proposedStart = minute(forContentY: targetContentY) - (duration / 2)
-        let movedWindow = WeeklyAvailabilityGridRules.moveWindowMinutes(
-            proposedStartMinute: proposedStart,
-            originalWindow: originalWindow,
-            existingWindows: appState.availabilityMinuteWindows(on: date, calendar: calendar)
-        )
-
-        appState.upsertAvailabilityWindow(movedWindow, on: date, calendar: calendar)
-    }
-
-    private func updateResizedStartWindow(_ originalWindow: AvailabilityMinuteWindow, on date: Date, translationY: CGFloat) {
-        let resizedWindow = WeeklyAvailabilityGridRules.resizeStartMinutes(
-            currentMinute: originalWindow.startMinute + Int((translationY / hourHeight) * 60),
-            originalWindow: originalWindow,
-            existingWindows: appState.availabilityMinuteWindows(on: date, calendar: calendar)
-        )
-
-        appState.upsertAvailabilityWindow(resizedWindow, on: date, calendar: calendar)
     }
 
     private func updateResizedStartWindow(_ originalWindow: AvailabilityMinuteWindow, on date: Date, targetContentY: CGFloat) {
@@ -1046,19 +1045,10 @@ private struct WeeklyAvailabilityGrid: View {
         appState.upsertAvailabilityWindow(resizedWindow, on: date, calendar: calendar)
     }
 
-    private func updateResizedEndWindow(_ originalWindow: AvailabilityMinuteWindow, on date: Date, translationY: CGFloat) {
-        let resizedWindow = WeeklyAvailabilityGridRules.resizeEndMinutes(
-            currentMinute: originalWindow.endMinute + Int((translationY / hourHeight) * 60),
-            originalWindow: originalWindow,
-            existingWindows: appState.availabilityMinuteWindows(on: date, calendar: calendar)
-        )
-
-        appState.upsertAvailabilityWindow(resizedWindow, on: date, calendar: calendar)
-    }
-
-    private func updateAutoScroll(visibleY: CGFloat, action: AutoScrollAction) {
+    private func updateAutoScroll(contentY: CGFloat, action: AutoScrollAction) {
+        let visibleY = visibleY(forContentY: contentY)
         autoScrollAction = action
-        autoScrollTargetY = min(max(visibleY, 0), visibleGridHeight)
+        autoScrollVisibleY = min(max(visibleY, 0), visibleGridHeight)
 
         if visibleY < autoScrollThreshold {
             autoScrollDirection = -1
@@ -1077,30 +1067,34 @@ private struct WeeklyAvailabilityGrid: View {
         }
 
         let maxOffset = max(contentHeight - visibleGridHeight, 0)
-        let nextOffset = min(max(scrollOffsetY + (CGFloat(autoScrollDirection) * autoScrollStep), 0), maxOffset)
-        guard nextOffset != scrollOffsetY else {
+        let currentOffset = requestedScrollOffsetY ?? scrollOffsetY
+        let proposedOffset = min(max(currentOffset + (CGFloat(autoScrollDirection) * autoScrollStep), 0), maxOffset)
+        let targetMinute = minute(forContentY: proposedOffset)
+        let nextOffset = min(minuteY(targetMinute), maxOffset)
+        guard nextOffset != currentOffset else {
             return
         }
 
-        let targetMinute = minute(forContentY: nextOffset)
-        scrollToMinute = targetMinute
-        let targetContentY = nextOffset + autoScrollTargetY
+        requestedScrollOffsetY = nextOffset
+        scrollRequest = AvailabilityScrollRequest(minute: targetMinute)
+        let targetContentY = nextOffset + autoScrollVisibleY
 
         switch action {
         case .create(let date, let id, let anchorY):
-            updateCreatingWindow(id: id, on: date, anchorY: anchorY, currentVisibleY: targetContentY - scrollOffsetY)
-        case .move(let date, let window):
-            updateMovedWindow(window, on: date, targetContentY: targetContentY)
-        case .resizeStart(let date, let window):
-            updateResizedStartWindow(window, on: date, targetContentY: targetContentY)
-        case .resizeEnd(let date, let window):
-            updateResizedEndWindow(window, on: date, targetContentY: targetContentY)
+            updateCreatingWindow(id: id, on: date, anchorContentY: anchorY, currentContentY: targetContentY)
+        case .move(let date, let window, let grabOffsetY):
+            updateMovedWindow(window, on: date, targetStartContentY: targetContentY - grabOffsetY)
+        case .resizeStart(let date, let window, let grabOffsetY):
+            updateResizedStartWindow(window, on: date, targetContentY: targetContentY - grabOffsetY)
+        case .resizeEnd(let date, let window, let grabOffsetY):
+            updateResizedEndWindow(window, on: date, targetContentY: targetContentY - grabOffsetY)
         }
     }
 
     private func stopAutoScroll() {
         autoScrollDirection = 0
         autoScrollAction = nil
+        requestedScrollOffsetY = nil
     }
 
     private func minuteWindow(for window: AvailabilityWindow) -> AvailabilityMinuteWindow {
@@ -1117,7 +1111,15 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private func contentY(forVisibleY y: CGFloat) -> CGFloat {
-        min(max(scrollOffsetY + y, 0), contentHeight)
+        boundedContentY((requestedScrollOffsetY ?? scrollOffsetY) + y)
+    }
+
+    private func visibleY(forContentY y: CGFloat) -> CGFloat {
+        y - (requestedScrollOffsetY ?? scrollOffsetY)
+    }
+
+    private func boundedContentY(_ y: CGFloat) -> CGFloat {
+        min(max(y, 0), contentHeight)
     }
 
     private func minuteY(_ minute: Int) -> CGFloat {

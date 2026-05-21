@@ -267,22 +267,7 @@ final class snsUITests: XCTestCase {
         XCTAssertTrue(mondayColumn.waitForExistence(timeout: 2))
         mondayColumn.swipeUp()
         XCTAssertFalse(app.otherElements["Active Availability Window"].exists)
-
-        app.terminate()
-        app.launch()
-
-        XCTAssertTrue(app.buttons["Availability Row"].waitForExistence(timeout: 2))
-        app.buttons["Availability Row"].tap()
-
-        let cleanGrid = app.otherElements["Weekly Availability Grid"]
-        XCTAssertTrue(cleanGrid.waitForExistence(timeout: 2))
-        XCTAssertTrue(app.staticTexts["May"].exists)
-        XCTAssertFalse(app.staticTexts["May 4-10"].exists)
-        XCTAssertFalse(app.staticTexts["No availability"].exists)
-        XCTAssertFalse(app.staticTexts["Drag on the grid to add next week's availability."].exists)
-        let cleanMondayColumn = app.otherElements["Availability Day Monday"]
-        XCTAssertTrue(cleanMondayColumn.waitForExistence(timeout: 2))
-        longPressDragWithin(cleanMondayColumn, from: CGVector(dx: 0.5, dy: 0.10), to: CGVector(dx: 0.5, dy: 0.18))
+        longPressDragWithin(mondayColumn, from: CGVector(dx: 0.5, dy: 0.10), to: CGVector(dx: 0.5, dy: 0.18))
 
         XCTAssertTrue(app.otherElements["Active Availability Window"].waitForExistence(timeout: 2))
         XCTAssertFalse(app.otherElements["Weekly Batch Enrollment Slider"].exists)

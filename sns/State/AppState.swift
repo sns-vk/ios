@@ -639,28 +639,37 @@ extension AppState {
         let day = configuredCalendar.startOfDay(for: date)
         let startTime = configuredCalendar.date(bySettingHour: 18, minute: 0, second: 0, of: day) ?? day
         let endTime = configuredCalendar.date(bySettingHour: 20, minute: 0, second: 0, of: day) ?? startTime
+        let window = AvailabilityWindow(startTime: startTime, endTime: endTime)
+        var nextAvailability = weeklyAvailability
 
-        guard let index = weeklyAvailability.firstIndex(where: { configuredCalendar.isDate($0.date, inSameDayAs: day) }) else {
-            weeklyAvailability.append(WeeklyAvailabilityDay(date: day, windows: [
-                AvailabilityWindow(startTime: startTime, endTime: endTime)
-            ]))
-            weeklyAvailability.sort { $0.date < $1.date }
-            return
+        if let index = nextAvailability.firstIndex(where: { configuredCalendar.isDate($0.date, inSameDayAs: day) }) {
+            var availabilityDay = nextAvailability[index]
+            availabilityDay.windows.append(window)
+            availabilityDay.windows.sort { $0.startTime < $1.startTime }
+            nextAvailability[index] = availabilityDay
+        } else {
+            nextAvailability.append(WeeklyAvailabilityDay(date: day, windows: [window]))
         }
 
-        weeklyAvailability[index].windows.append(AvailabilityWindow(startTime: startTime, endTime: endTime))
+        nextAvailability.sort { $0.date < $1.date }
+        weeklyAvailability = nextAvailability
     }
 
     func removeAvailabilityWindow(_ windowID: AvailabilityWindow.ID, on date: Date, calendar: Calendar = .current) {
         let configuredCalendar = WeeklyAvailabilityCalendar.configuredCalendar(from: calendar)
-        guard let index = weeklyAvailability.firstIndex(where: { configuredCalendar.isDate($0.date, inSameDayAs: date) }) else {
+        var nextAvailability = weeklyAvailability
+        guard let index = nextAvailability.firstIndex(where: { configuredCalendar.isDate($0.date, inSameDayAs: date) }) else {
             return
         }
 
-        weeklyAvailability[index].windows.removeAll { $0.id == windowID }
-        if weeklyAvailability[index].windows.isEmpty {
-            weeklyAvailability.remove(at: index)
+        var availabilityDay = nextAvailability[index]
+        availabilityDay.windows.removeAll { $0.id == windowID }
+        if availabilityDay.windows.isEmpty {
+            nextAvailability.remove(at: index)
+        } else {
+            nextAvailability[index] = availabilityDay
         }
+        weeklyAvailability = nextAvailability
     }
 
     func availabilityWindows(on date: Date, calendar: Calendar = .current) -> [AvailabilityWindow] {
@@ -695,17 +704,22 @@ extension AppState {
             endTime: WeeklyAvailabilityCalendar.date(on: day, minuteOfDay: minuteWindow.endMinute, calendar: configuredCalendar)
         )
 
-        if let dayIndex = weeklyAvailability.firstIndex(where: { configuredCalendar.isDate($0.date, inSameDayAs: day) }) {
-            if let windowIndex = weeklyAvailability[dayIndex].windows.firstIndex(where: { $0.id == window.id }) {
-                weeklyAvailability[dayIndex].windows[windowIndex] = window
+        var nextAvailability = weeklyAvailability
+        if let dayIndex = nextAvailability.firstIndex(where: { configuredCalendar.isDate($0.date, inSameDayAs: day) }) {
+            var availabilityDay = nextAvailability[dayIndex]
+            if let windowIndex = availabilityDay.windows.firstIndex(where: { $0.id == window.id }) {
+                availabilityDay.windows[windowIndex] = window
             } else {
-                weeklyAvailability[dayIndex].windows.append(window)
+                availabilityDay.windows.append(window)
             }
-            weeklyAvailability[dayIndex].windows.sort { $0.startTime < $1.startTime }
+            availabilityDay.windows.sort { $0.startTime < $1.startTime }
+            nextAvailability[dayIndex] = availabilityDay
         } else {
-            weeklyAvailability.append(WeeklyAvailabilityDay(date: day, windows: [window]))
-            weeklyAvailability.sort { $0.date < $1.date }
+            nextAvailability.append(WeeklyAvailabilityDay(date: day, windows: [window]))
         }
+
+        nextAvailability.sort { $0.date < $1.date }
+        weeklyAvailability = nextAvailability
 
         return window
     }
