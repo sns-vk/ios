@@ -275,7 +275,8 @@ struct RootView: View {
         case .profileSubstanceUse(let category):
             AccountSubstanceUseView(
                 category: category,
-                selection: substanceUseBinding(for: category)
+                selection: substanceUseBinding(for: category),
+                isShared: sharedProfileFieldBinding(for: .substanceUse(category))
             )
         case .matchSubstanceUse(let category):
             MatchSubstanceUsePreferenceView(
@@ -351,13 +352,25 @@ struct RootView: View {
     private func profileFieldDestination(for field: ProfileField) -> some View {
         switch field {
         case .age:
-            AccountAgeView(age: $appState.age)
+            AccountAgeView(age: $appState.age, isShared: sharedProfileFieldBinding(for: .age))
         case .gender:
-            AccountSingleSelectView(title: field.title, selection: $appState.gender)
+            AccountSingleSelectView(
+                title: field.title,
+                selection: $appState.gender,
+                isShared: sharedProfileFieldBinding(for: .gender)
+            )
         case .pronouns:
-            AccountSingleSelectView(title: field.title, selection: $appState.pronouns)
+            AccountSingleSelectView(
+                title: field.title,
+                selection: $appState.pronouns,
+                isShared: sharedProfileFieldBinding(for: .pronouns)
+            )
         case .sexuality:
-            AccountSingleSelectView(title: field.title, selection: $appState.sexuality)
+            AccountSingleSelectView(
+                title: field.title,
+                selection: $appState.sexuality,
+                isShared: sharedProfileFieldBinding(for: .sexuality)
+            )
         }
     }
 
@@ -373,6 +386,21 @@ struct RootView: View {
             },
             set: { newValue in
                 appState.substanceUse[category] = newValue
+            }
+        )
+    }
+
+    private func sharedProfileFieldBinding(for field: ProfileDisclosureField) -> Binding<Bool> {
+        Binding(
+            get: {
+                appState.sharedProfileFields.contains(field)
+            },
+            set: { isShared in
+                if isShared {
+                    appState.sharedProfileFields.insert(field)
+                } else {
+                    appState.sharedProfileFields.remove(field)
+                }
             }
         )
     }

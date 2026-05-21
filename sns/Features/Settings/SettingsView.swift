@@ -34,7 +34,7 @@ struct ProfileTabView: View {
                 }
                 .accessibilityIdentifier("My Card Row")
             } footer: {
-                Text("Shared when matched.")
+                Text("Shared when adding a contact.")
             }
 
             Section("Account") {
@@ -100,7 +100,7 @@ struct ProfileTabView: View {
             NavigationLink(value: RootDestination.profileSubstanceUse(substance)) {
                 preferenceValueRow(
                     title: substance.label,
-                    value: selection[substance, default: .preferNotToSay].label,
+                    value: selection[substance, default: .no].label,
                     systemImage: substance.systemImage
                 )
             }
@@ -243,7 +243,7 @@ struct AccountProfileView: View {
                     NavigationLink(value: RootDestination.profileSubstanceUse(substance)) {
                         valueRow(
                             title: substance.label,
-                            value: substanceUse[substance, default: .preferNotToSay].label
+                            value: substanceUse[substance, default: .no].label
                         )
                     }
                 }
@@ -264,6 +264,7 @@ struct AccountProfileView: View {
 
 struct AccountAgeView: View {
     @Binding var age: Int
+    @Binding var isShared: Bool
 
     var body: some View {
         Form {
@@ -290,6 +291,8 @@ struct AccountAgeView: View {
                 }
                 .padding(.vertical, 6)
             }
+
+            ProfileDisclosureSection(isShared: $isShared)
         }
         .navigationTitle("Age")
     }
@@ -298,6 +301,7 @@ struct AccountAgeView: View {
 struct AccountSingleSelectView<Option: ProfileCriteriaOption>: View {
     let title: String
     @Binding var selection: Option
+    @Binding var isShared: Bool
 
     var body: some View {
         Form {
@@ -321,6 +325,8 @@ struct AccountSingleSelectView<Option: ProfileCriteriaOption>: View {
             } header: {
                 Text(title)
             }
+
+            ProfileDisclosureSection(isShared: $isShared)
         }
         .navigationTitle(title)
     }
@@ -329,11 +335,13 @@ struct AccountSingleSelectView<Option: ProfileCriteriaOption>: View {
 struct AccountSubstanceUseView: View {
     let category: SubstanceUseCategory
     @Binding var selection: SubstanceUseAnswer
+    @Binding var isShared: Bool
 
     var body: some View {
         SubstanceUseAnswerView(
             title: category.label,
-            selection: $selection
+            selection: $selection,
+            isShared: $isShared
         )
     }
 }
@@ -526,6 +534,7 @@ struct MultiSelectOptionsView<Option: ProfileCriteriaOption>: View {
 struct SubstanceUseAnswerView: View {
     let title: String
     @Binding var selection: SubstanceUseAnswer
+    var isShared: Binding<Bool>?
 
     var body: some View {
         Form {
@@ -550,8 +559,33 @@ struct SubstanceUseAnswerView: View {
                     .accessibilityIdentifier("\(title) \(option.label) Substance Use Option")
                 }
             }
+
+            if let isShared {
+                ProfileDisclosureSection(isShared: isShared)
+            }
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct ProfileDisclosureSection: View {
+    @Binding var isShared: Bool
+
+    var body: some View {
+        Section {
+            Button {
+                isShared.toggle()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: isShared ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(isShared ? Color.accentColor : Color.secondary)
+
+                    Text("Share with matched person")
+                        .foregroundStyle(.primary)
+                }
+            }
+            .buttonStyle(.plain)
+        }
     }
 }

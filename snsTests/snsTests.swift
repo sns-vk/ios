@@ -62,7 +62,8 @@ struct snsTests {
         let state = AppState(
             myCard: AppContact(name: "My Name"),
             contacts: [enabledContact, disabledContact],
-            groups: []
+            groups: [],
+            sharedProfileFields: []
         )
 
         #expect(state.fofSourceCount == 1)
@@ -78,7 +79,8 @@ struct snsTests {
         let state = AppState(
             myCard: AppContact(name: "My Name"),
             contacts: [contact],
-            groups: [AppGroup(name: "Study Group", members: [])]
+            groups: [AppGroup(name: "Study Group", members: [])],
+            sharedProfileFields: []
         )
 
         state.add(contact, toGroupAt: 0)
@@ -197,6 +199,7 @@ struct snsTests {
             myCard: AppContact(name: "My Name"),
             contacts: [],
             groups: [],
+            sharedProfileFields: [],
             matchCriteriaUpdatedAt: staleDate
         )
 

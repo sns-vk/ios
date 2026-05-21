@@ -64,7 +64,7 @@ enum SexualityOption: String, ProfileCriteriaOption {
     }
 }
 
-enum SubstanceUseCategory: String, ProfileCriteriaOption {
+enum SubstanceUseCategory: String, ProfileCriteriaOption, Sendable {
     case vaping
     case smoking
     case marijuana
@@ -86,16 +86,22 @@ enum SubstanceUseAnswer: String, ProfileCriteriaOption {
     case yes
     case sometimes
     case no
-    case preferNotToSay
 
     var label: String {
         switch self {
         case .yes: "Yes"
         case .sometimes: "Sometimes"
         case .no: "No"
-        case .preferNotToSay: "Prefer not to say"
         }
     }
+}
+
+enum ProfileDisclosureField: Hashable, Sendable {
+    case age
+    case gender
+    case pronouns
+    case sexuality
+    case substanceUse(SubstanceUseCategory)
 }
 
 struct AvailabilityWindow: Identifiable, Hashable {
@@ -199,7 +205,7 @@ struct MatchCriteriaSnapshot: Hashable {
         }
 
         return answeredOptions
-            .map { "\($0.label): \(values[$0, default: .preferNotToSay].label)" }
+            .map { "\($0.label): \(values[$0, default: .no].label)" }
             .joined(separator: ", ")
     }
 }
@@ -404,6 +410,7 @@ final class AppState {
     var pronouns: PronounOption
     var sexuality: SexualityOption
     var substanceUse: [SubstanceUseCategory: SubstanceUseAnswer]
+    var sharedProfileFields: Set<ProfileDisclosureField>
     var preferredGenders: Set<GenderIdentity> {
         didSet { markMatchCriteriaEditedIfChanged(from: oldValue, to: preferredGenders) }
     }
@@ -448,6 +455,7 @@ final class AppState {
         pronouns: PronounOption = .sheHer,
         sexuality: SexualityOption = .notListed,
         substanceUse: [SubstanceUseCategory: SubstanceUseAnswer] = [:],
+        sharedProfileFields: Set<ProfileDisclosureField>,
         preferredGenders: Set<GenderIdentity> = Set(GenderIdentity.allCases),
         preferredSexualities: Set<SexualityOption> = Set(SexualityOption.allCases),
         acceptedSubstanceUse: [SubstanceUseCategory: SubstanceUseAnswer] = Dictionary(
@@ -471,6 +479,7 @@ final class AppState {
         self.pronouns = pronouns
         self.sexuality = sexuality
         self.substanceUse = substanceUse
+        self.sharedProfileFields = sharedProfileFields
         self.preferredGenders = preferredGenders
         self.preferredSexualities = preferredSexualities
         self.acceptedSubstanceUse = acceptedSubstanceUse
@@ -489,7 +498,8 @@ final class AppState {
         AppState(
             myCard: AppContact(name: "My Name"),
             contacts: MockData.contacts,
-            groups: MockData.groups
+            groups: MockData.groups,
+            sharedProfileFields: []
         )
     }
 
@@ -761,7 +771,7 @@ extension AppState {
     }
 
     func substanceUseAnswer(for category: SubstanceUseCategory) -> SubstanceUseAnswer {
-        substanceUse[category, default: .preferNotToSay]
+        substanceUse[category, default: .no]
     }
 
     func acceptedSubstanceUseAnswer(for category: SubstanceUseCategory) -> SubstanceUseAnswer {
@@ -802,7 +812,7 @@ extension AppState {
         }
 
         return answeredOptions
-            .map { "\($0.label): \(values[$0, default: .preferNotToSay].label)" }
+            .map { "\($0.label): \(values[$0, default: .no].label)" }
             .joined(separator: ", ")
     }
 }
