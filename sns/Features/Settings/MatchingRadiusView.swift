@@ -28,12 +28,27 @@ struct MatchingRadiusView: View {
                     .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 6)
-            } footer: {
-                Text(extendRadiusIfNeeded ? "If there are no matches within this radius, people outside it can be considered." : "People outside this radius are not eligible for matching.")
             }
 
             Section {
-                Toggle("Extend if needed", isOn: $extendRadiusIfNeeded)
+                Button {
+                    extendRadiusIfNeeded.toggle()
+                } label: {
+                    HStack {
+                        Text("Extend if needed")
+                            .foregroundStyle(.primary)
+
+                        Spacer()
+
+                        Image(systemName: extendRadiusIfNeeded ? "checkmark.circle.fill" : "circle")
+                            .font(.title3)
+                            .foregroundStyle(extendRadiusIfNeeded ? Color.accentColor : Color.secondary)
+                            .accessibilityHidden(true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
         .navigationTitle("Radius")
