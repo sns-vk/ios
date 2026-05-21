@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import PhotosUI
 
 struct SettingsView: View {
     @Bindable var appState: AppState
@@ -124,9 +125,24 @@ struct ProfileTabView: View {
 
 struct SharingCardView: View {
     @Bindable var appState: AppState
+    @State private var selectedPhoto: PhotosPickerItem?
 
     var body: some View {
         List {
+            photoEditor
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+
+            Section("Photo") {
+                sharingCardRow(
+                    title: "Photo",
+                    systemImage: "camera",
+                    sharedField: .photo,
+                    accessibilityIdentifier: "Sharing Card Photo Row"
+                )
+            }
+
             Section("Name") {
                 sharingCardRow(
                     title: "First Name",
@@ -196,6 +212,40 @@ struct SharingCardView: View {
         .navigationTitle("Sharing Card")
         .navigationBarTitleDisplayMode(.inline)
         .listStyle(.insetGrouped)
+        .onChange(of: selectedPhoto) { _, newPhoto in
+            Task {
+                appState.myCard.photoData = try? await newPhoto?.loadTransferable(type: Data.self)
+            }
+        }
+    }
+
+    private var photoEditor: some View {
+        VStack(spacing: 12) {
+            ZStack(alignment: .topTrailing) {
+                MyCardAvatarView(contact: appState.myCard, size: 160)
+
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Image(systemName: "pencil")
+                        .font(.headline)
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 42, height: 42)
+                        .background(Color(.systemBackground), in: Circle())
+                        .overlay {
+                            Circle()
+                                .stroke(Color(.separator).opacity(0.45), lineWidth: 1)
+                        }
+                        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+                }
+                .buttonStyle(.plain)
+                .offset(x: 2, y: -2)
+                .accessibilityIdentifier("Choose Account Photo")
+            }
+
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 18)
+        .padding(.bottom, 6)
+        .accessibilityIdentifier("Sharing Card Photo Editor")
     }
 
     private func sharingCardRow(
@@ -254,8 +304,6 @@ struct SharingFieldView: View {
                 )
             } header: {
                 Text(field.title)
-            } footer: {
-                Text("Fields shared with matches are also shared when adding a contact.")
             }
         }
         .navigationTitle(field.title)
@@ -334,6 +382,7 @@ enum SharingDisclosureState: Equatable {
 extension ProfileDisclosureField {
     var title: String {
         switch self {
+        case .photo: "Photo"
         case .firstName: "First Name"
         case .lastName: "Last Name"
         case .nickname: "Nickname"
@@ -362,10 +411,10 @@ struct MyCardAvatarView: View {
                     .frame(width: size, height: size)
                     .clipShape(Circle())
             } else {
-                Text(contact.initials)
-                    .font(.system(size: size * 0.38, weight: .semibold, design: .serif))
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: size * 0.72, weight: .regular))
                     .foregroundStyle(Color.accentColor)
-                    .accessibilityIdentifier("My Card Initials Avatar")
+                    .accessibilityIdentifier("My Card Default Avatar")
             }
         }
         .frame(width: size, height: size)

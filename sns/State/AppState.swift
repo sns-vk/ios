@@ -42,7 +42,10 @@ enum PronounOption: String, ProfileCriteriaOption {
     case notListed = "not listed"
 
     var label: String {
-        rawValue
+        switch self {
+        case .heHim, .sheHer, .theyThem: rawValue
+        case .notListed: "Not listed"
+        }
     }
 }
 
@@ -97,6 +100,7 @@ enum SubstanceUseAnswer: String, ProfileCriteriaOption {
 }
 
 enum ProfileDisclosureField: Hashable, Sendable {
+    case photo
     case firstName
     case lastName
     case nickname
@@ -502,9 +506,16 @@ final class AppState {
 
     static func mock() -> AppState {
         AppState(
-            myCard: AppContact(name: "My Name"),
+            myCard: {
+                var card = AppContact(name: "Kevin Jin")
+                card.nickname = "KEVWJIN"
+                return card
+            }(),
             contacts: MockData.contacts,
             groups: MockData.groups,
+            gender: .male,
+            pronouns: .heHim,
+            sexuality: .straight,
             sharedContactFields: [],
             sharedProfileFields: []
         )
