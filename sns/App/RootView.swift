@@ -1349,6 +1349,8 @@ private struct WeeklyAvailabilityGrid: View {
     @State private var movingOriginalWindow: AvailabilityMinuteWindow?
     @State private var resizingStartOriginalWindow: AvailabilityMinuteWindow?
     @State private var resizingEndOriginalWindow: AvailabilityMinuteWindow?
+    @State private var creatingWindowID: AvailabilityWindow.ID?
+    @State private var createdWindowID: AvailabilityWindow.ID?
     @State private var scrollOffsetY: CGFloat = 0
     @State private var horizontalDragOffset: CGFloat = 0
     @State private var selectorVisibleStartIndex = 0
@@ -1734,7 +1736,16 @@ private struct WeeklyAvailabilityGrid: View {
                 dates: weekDates,
                 dayWidth: dayWidth,
                 isEnabled: !isLocked,
+                onTap: {
+                    activeWindowID = nil
+                    createdWindowID = nil
+                },
                 onChanged: { date, id, anchorY, currentY in
+                    if creatingWindowID != id {
+                        activeWindowID = nil
+                        createdWindowID = nil
+                    }
+                    creatingWindowID = id
                     updateCreatingWindow(
                         id: id,
                         on: date,
@@ -1742,7 +1753,11 @@ private struct WeeklyAvailabilityGrid: View {
                         currentContentY: currentY
                     )
                 },
-                onEnded: {}
+                onEnded: {
+                    activeWindowID = createdWindowID
+                    creatingWindowID = nil
+                    createdWindowID = nil
+                }
             )
             .frame(width: dayStripWidth, height: height)
             availabilityWindows(dayWidth: dayWidth)
@@ -1791,7 +1806,8 @@ private struct WeeklyAvailabilityGrid: View {
         ForEach(Array(weekDates.enumerated()), id: \.element) { dayIndex, date in
             ForEach(appState.availabilityWindows(on: date, calendar: calendar)) { window in
                 let minuteWindow = minuteWindow(for: window, on: date)
-                let isActive = !isLocked && activeWindowID == window.id
+                let isCreating = !isLocked && creatingWindowID == window.id
+                let isActive = !isLocked && !isCreating && activeWindowID == window.id
                 let windowHeight = max(minuteHeight(minuteWindow.endMinute - minuteWindow.startMinute), 28)
 
                 AvailabilityWindowBlock(
@@ -1966,8 +1982,8 @@ private struct WeeklyAvailabilityGrid: View {
             startMinute: minuteWindow.startMinute,
             endMinute: minuteWindow.endMinute
         )
-        activeWindowID = id
-        appState.upsertAvailabilityWindow(minuteWindow, on: date, calendar: calendar)
+        let savedWindow = appState.upsertAvailabilityWindow(minuteWindow, on: date, calendar: calendar)
+        createdWindowID = savedWindow.id
     }
 
     private func updateMovedWindow(_ originalWindow: AvailabilityMinuteWindow, on date: Date, targetStartContentY: CGFloat) {
@@ -2061,6 +2077,7 @@ private struct AvailabilityCreationGestureOverlay: UIViewRepresentable {
     let dates: [Date]
     let dayWidth: CGFloat
     let isEnabled: Bool
+    let onTap: () -> Void
     let onChanged: (Date, UUID, CGFloat, CGFloat) -> Void
     let onEnded: () -> Void
 
@@ -2097,6 +2114,12 @@ private struct AvailabilityCreationGestureOverlay: UIViewRepresentable {
             recognizer.cancelsTouchesInView = false
             recognizer.delegate = self
             view.addGestureRecognizer(recognizer)
+
+            let tapRecognizer = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+            tapRecognizer.cancelsTouchesInView = false
+            tapRecognizer.delegate = self
+            tapRecognizer.require(toFail: recognizer)
+            view.addGestureRecognizer(tapRecognizer)
         }
 
         @objc private func handleLongPress(_ recognizer: AvailabilityLongPressDragRecognizer) {
@@ -2122,6 +2145,11 @@ private struct AvailabilityCreationGestureOverlay: UIViewRepresentable {
             default:
                 break
             }
+        }
+
+        @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
+            guard parent.isEnabled, recognizer.state == .ended else { return }
+            parent.onTap()
         }
 
         func gestureRecognizer(
