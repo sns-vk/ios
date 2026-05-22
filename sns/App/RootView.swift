@@ -2274,13 +2274,16 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
 
             if isActive {
                 GeometryReader { proxy in
+                    let handleWidth = max(proxy.size.width / 3, 24)
+                    let handleHeight: CGFloat = 10
+
                     Capsule()
                         .fill(.ultraThinMaterial)
                         .overlay {
                             Capsule()
                                 .stroke(.white.opacity(0.7), lineWidth: 1)
                         }
-                        .frame(width: 36, height: 8)
+                        .frame(width: handleWidth, height: handleHeight)
                         .position(x: proxy.size.width / 2, y: 0)
                         .highPriorityGesture(resizeStartGesture)
                         .accessibilityIdentifier("Availability Start Handle")
@@ -2292,7 +2295,7 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
                             Capsule()
                                 .stroke(.white.opacity(0.7), lineWidth: 1)
                         }
-                        .frame(width: 36, height: 8)
+                        .frame(width: handleWidth, height: handleHeight)
                         .position(x: proxy.size.width / 2, y: proxy.size.height)
                         .highPriorityGesture(resizeEndGesture)
                         .accessibilityIdentifier("Availability End Handle")
