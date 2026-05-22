@@ -10,6 +10,8 @@ struct RootView: View {
     @State private var enrollmentShimmerTrigger = 0
     @State private var matchCardShimmerTrigger = 0
     @State private var hasShownMatchTab = false
+    @State private var availabilityVisibleStartIndex = 5
+    @State private var availabilityTopMinute = (16 * 60) + 30
 
     var body: some View {
         TabView(selection: Binding(
@@ -321,7 +323,9 @@ struct RootView: View {
         case .weeklyBatchAvailability:
             WeeklyBatchAvailabilityView(
                 appState: appState,
-                isEnrolledInBatch: isEnrolledInBatch
+                isEnrolledInBatch: isEnrolledInBatch,
+                visibleStartIndex: $availabilityVisibleStartIndex,
+                topVisibleMinute: $availabilityTopMinute
             )
         }
     }
@@ -834,6 +838,8 @@ private struct RootSearchView: View {
 private struct WeeklyBatchAvailabilityView: View {
     @Bindable var appState: AppState
     let isEnrolledInBatch: Bool
+    @Binding var visibleStartIndex: Int
+    @Binding var topVisibleMinute: Int
     @State private var viewMode: AvailabilityViewMode = .multiDay
     @State private var activeWindowID: AvailabilityWindow.ID?
     @State private var editingWindowContext: AvailabilityWindowEditContext?
@@ -858,6 +864,8 @@ private struct WeeklyBatchAvailabilityView: View {
                                 bottomSafeArea: proxy.safeAreaInsets.bottom
                             ),
                             activeWindowID: $activeWindowID,
+                            visibleStartIndex: $visibleStartIndex,
+                            topVisibleMinute: $topVisibleMinute,
                             onEditWindow: editWindow
                         )
                     case .list:
@@ -1243,8 +1251,9 @@ private struct WeeklyAvailabilityEditor: View {
     let isLocked: Bool
     let gridHeight: CGFloat
     @Binding var activeWindowID: AvailabilityWindow.ID?
+    @Binding var visibleStartIndex: Int
+    @Binding var topVisibleMinute: Int
     let onEditWindow: (AvailabilityWindow, Date) -> Void
-    @State private var visibleStartIndex = 5
 
     private let visibleDayCount = 2
 
@@ -1300,6 +1309,7 @@ private struct WeeklyAvailabilityEditor: View {
                 visibleDates: visibleDates,
                 visibleGridHeight: gridHeight,
                 activeWindowID: $activeWindowID,
+                topVisibleMinute: $topVisibleMinute,
                 onShiftVisibleDates: shiftVisibleDates,
                 onSelectVisibleStartIndex: selectVisibleStartIndex,
                 onEditWindow: onEditWindow
@@ -1342,6 +1352,7 @@ private struct WeeklyAvailabilityGrid: View {
     let visibleDates: [Date]
     let visibleGridHeight: CGFloat
     @Binding var activeWindowID: AvailabilityWindow.ID?
+    @Binding var topVisibleMinute: Int
     let onShiftVisibleDates: (Int) -> Void
     let onSelectVisibleStartIndex: (Int) -> Void
     let onEditWindow: (AvailabilityWindow, Date) -> Void
@@ -1355,7 +1366,7 @@ private struct WeeklyAvailabilityGrid: View {
     @State private var creatingPreviewWindow: AvailabilityMinuteWindow?
     @State private var scrollOffsetY: CGFloat = 0
     @State private var horizontalDragOffset: CGFloat = 0
-    @State private var selectorVisibleStartIndex = 0
+    @State private var selectorVisibleStartIndex: Int
     @State private var pendingHorizontalSnap: DispatchWorkItem?
 
     private let timeLabelWidth: CGFloat = 50
@@ -1374,7 +1385,6 @@ private struct WeeklyAvailabilityGrid: View {
     private let snapSettleDuration: TimeInterval = 0.18
     private let activeColor = Color.accentColor
     private let gridLineColor = Color(red: 0.88, green: 0.88, blue: 0.9)
-    private let scrollViewCoordinateSpace = "AvailabilityGridScrollView"
     private let contentCoordinateSpace = "AvailabilityGridContent"
 
     private var calendar: Calendar {
@@ -1397,6 +1407,33 @@ private struct WeeklyAvailabilityGrid: View {
         max(0, weekDates.count - visibleDayCount)
     }
 
+    init(
+        appState: AppState,
+        isLocked: Bool,
+        visibleStartIndex: Int,
+        visibleDayCount: Int,
+        visibleDates: [Date],
+        visibleGridHeight: CGFloat,
+        activeWindowID: Binding<AvailabilityWindow.ID?>,
+        topVisibleMinute: Binding<Int>,
+        onShiftVisibleDates: @escaping (Int) -> Void,
+        onSelectVisibleStartIndex: @escaping (Int) -> Void,
+        onEditWindow: @escaping (AvailabilityWindow, Date) -> Void
+    ) {
+        self.appState = appState
+        self.isLocked = isLocked
+        self.visibleStartIndex = visibleStartIndex
+        self.visibleDayCount = visibleDayCount
+        self.visibleDates = visibleDates
+        self.visibleGridHeight = visibleGridHeight
+        self._activeWindowID = activeWindowID
+        self._topVisibleMinute = topVisibleMinute
+        self.onShiftVisibleDates = onShiftVisibleDates
+        self.onSelectVisibleStartIndex = onSelectVisibleStartIndex
+        self.onEditWindow = onEditWindow
+        self._selectorVisibleStartIndex = State(initialValue: visibleStartIndex)
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let dayViewportWidth = geometry.size.width - timeLabelWidth - trailingScrollHintWidth
@@ -1414,60 +1451,63 @@ private struct WeeklyAvailabilityGrid: View {
                         .simultaneousGesture(horizontalDateDragGesture(dayWidth: dayWidth))
                         .simultaneousGesture(clearActiveWindowGesture)
 
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical, showsIndicators: false) {
-                            VStack(spacing: 0) {
-                                Color.clear
-                                    .frame(height: topScrollInset)
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: 0) {
+                            Color.clear
+                                .frame(height: topScrollInset)
 
-                                ZStack(alignment: .topLeading) {
-                                    scrollOffsetReader()
-                                    scrollAnchors()
-                                    gridLines(totalWidth: geometry.size.width, dayWidth: dayWidth)
-                                    timeGutterSeparator(height: interactiveContentHeight, showsShadow: true)
-                                    dayStrip(
-                                        dayWidth: dayWidth,
-                                        dayStripWidth: dayStripWidth,
-                                        height: interactiveContentHeight,
-                                        stripOffsetX: stripOffsetX
-                                    )
-                                    .simultaneousGesture(horizontalDateDragGesture(dayWidth: dayWidth))
-                                    .frame(width: dayViewportWidth, height: interactiveContentHeight, alignment: .topLeading)
-                                    .clipped()
-                                    .overlay(alignment: .trailing) {
-                                        viewportTrailingSeparator(height: interactiveContentHeight)
-                                    }
-                                    .offset(x: timeLabelWidth)
-                                }
-                                .frame(width: geometry.size.width, height: interactiveContentHeight, alignment: .topLeading)
-                                .coordinateSpace(name: contentCoordinateSpace)
-
-                                Color.clear
-                                    .frame(height: bottomScrollInset(for: gridViewportHeight))
-                            }
-                        }
-                        .coordinateSpace(name: scrollViewCoordinateSpace)
-                        .frame(height: gridViewportHeight)
-                        .background(alignment: .topLeading) {
-                            columnSeparators(dayWidth: dayWidth, height: gridViewportHeight, dayCount: weekDates.count)
-                                .frame(width: dayStripWidth, height: gridViewportHeight, alignment: .topLeading)
-                                .offset(x: stripOffsetX)
-                                .frame(width: dayViewportWidth, height: gridViewportHeight, alignment: .topLeading)
+                            ZStack(alignment: .topLeading) {
+                                gridLines(totalWidth: geometry.size.width, dayWidth: dayWidth)
+                                timeGutterSeparator(height: interactiveContentHeight, showsShadow: true)
+                                dayStrip(
+                                    dayWidth: dayWidth,
+                                    dayStripWidth: dayStripWidth,
+                                    height: interactiveContentHeight,
+                                    stripOffsetX: stripOffsetX
+                                )
+                                .simultaneousGesture(horizontalDateDragGesture(dayWidth: dayWidth))
+                                .frame(width: dayViewportWidth, height: interactiveContentHeight, alignment: .topLeading)
                                 .clipped()
+                                .overlay(alignment: .trailing) {
+                                    viewportTrailingSeparator(height: interactiveContentHeight)
+                                }
                                 .offset(x: timeLabelWidth)
-                        }
-                        .clipped()
-                        .contentMargins(.all, 0, for: .scrollContent)
-                        .scrollIndicators(.hidden)
-                        .onPreferenceChange(AvailabilityScrollOffsetKey.self) { value in
-                            scrollOffsetY = max(0, -value)
-                        }
-                        .onAppear {
-                            scrollOffsetY = minuteY(initialTopMinute)
-                            DispatchQueue.main.async {
-                                proxy.scrollTo(scrollAnchorID(for: initialTopMinute), anchor: .top)
                             }
+                            .frame(width: geometry.size.width, height: interactiveContentHeight, alignment: .topLeading)
+                            .coordinateSpace(name: contentCoordinateSpace)
+
+                            Color.clear
+                                .frame(height: bottomScrollInset(for: gridViewportHeight))
                         }
+                        .background {
+                            AvailabilityScrollViewObserver(
+                                topInset: topScrollInset,
+                                restoreContentOffsetY: minuteY(boundedMinute(topVisibleMinute)),
+                                onOffsetChanged: { nextOffset in
+                                    scrollOffsetY = nextOffset
+                                },
+                                onUserScrollEnded: { finalOffset in
+                                    saveTopVisibleMinute(fromContentY: finalOffset)
+                                }
+                            )
+                            .frame(width: 0, height: 0)
+                        }
+                    }
+                    .frame(height: gridViewportHeight)
+                    .background(alignment: .topLeading) {
+                        columnSeparators(dayWidth: dayWidth, height: gridViewportHeight, dayCount: weekDates.count)
+                            .frame(width: dayStripWidth, height: gridViewportHeight, alignment: .topLeading)
+                            .offset(x: stripOffsetX)
+                            .frame(width: dayViewportWidth, height: gridViewportHeight, alignment: .topLeading)
+                            .clipped()
+                            .offset(x: timeLabelWidth)
+                    }
+                    .clipped()
+                    .contentMargins(.all, 0, for: .scrollContent)
+                    .scrollIndicators(.hidden)
+                    .onAppear {
+                        let minute = boundedMinute(topVisibleMinute)
+                        scrollOffsetY = minuteY(minute)
                     }
 
                     Color.clear
@@ -1768,42 +1808,6 @@ private struct WeeklyAvailabilityGrid: View {
         }
         .frame(width: dayStripWidth, height: height, alignment: .topLeading)
         .offset(x: stripOffsetX)
-    }
-
-    private func scrollOffsetReader() -> some View {
-        GeometryReader { proxy in
-            Color.clear
-                .preference(
-                    key: AvailabilityScrollOffsetKey.self,
-                    value: proxy.frame(in: .named(scrollViewCoordinateSpace)).minY
-                )
-        }
-        .frame(height: 0)
-    }
-
-    private func scrollAnchors() -> some View {
-        VStack(spacing: 0) {
-            ForEach(Array(stride(
-                from: WeeklyAvailabilityGridRules.startMinute,
-                to: WeeklyAvailabilityGridRules.endMinute,
-                by: WeeklyAvailabilityGridRules.snapIntervalMinutes
-            )), id: \.self) { minute in
-                Color.clear
-                    .frame(width: 1, height: minuteHeight(WeeklyAvailabilityGridRules.snapIntervalMinutes))
-                    .id(scrollAnchorID(for: minute))
-            }
-        }
-        .frame(width: 1, height: contentHeight, alignment: .topLeading)
-        .allowsHitTesting(false)
-    }
-
-    private func scrollAnchorMinute(for minute: Int) -> Int {
-        let maxAnchorMinute = WeeklyAvailabilityGridRules.endMinute - WeeklyAvailabilityGridRules.snapIntervalMinutes
-        return min(max(minute, WeeklyAvailabilityGridRules.startMinute), maxAnchorMinute)
-    }
-
-    private func scrollAnchorID(for minute: Int) -> String {
-        "availability-minute-\(scrollAnchorMinute(for: minute))"
     }
 
     private func availabilityWindows(dayWidth: CGFloat) -> some View {
@@ -2248,6 +2252,17 @@ private struct WeeklyAvailabilityGrid: View {
         return min(max(rawMinute, WeeklyAvailabilityGridRules.startMinute), WeeklyAvailabilityGridRules.endMinute)
     }
 
+    private func saveTopVisibleMinute(fromContentY y: CGFloat) {
+        let minute = rawMinute(forContentY: y)
+        if topVisibleMinute != minute {
+            topVisibleMinute = minute
+        }
+    }
+
+    private func boundedMinute(_ minute: Int) -> Int {
+        min(max(minute, WeeklyAvailabilityGridRules.startMinute), WeeklyAvailabilityGridRules.endMinute)
+    }
+
     private func boundedContentY(_ y: CGFloat) -> CGFloat {
         min(max(y, 0), contentHeight)
     }
@@ -2278,11 +2293,136 @@ private struct WeeklyAvailabilityGrid: View {
     }
 }
 
-private struct AvailabilityScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
+private struct AvailabilityScrollViewObserver: UIViewRepresentable {
+    let topInset: CGFloat
+    let restoreContentOffsetY: CGFloat
+    let onOffsetChanged: (CGFloat) -> Void
+    let onUserScrollEnded: (CGFloat) -> Void
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+        context.coordinator.attach(from: view)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.parent = self
+        context.coordinator.attach(from: uiView)
+    }
+
+    final class Coordinator: NSObject {
+        var parent: AvailabilityScrollViewObserver
+        private weak var scrollView: UIScrollView?
+        private var contentOffsetObservation: NSKeyValueObservation?
+        private var isTrackingUserScroll = false
+        private var didRestoreInitialOffset = false
+
+        init(_ parent: AvailabilityScrollViewObserver) {
+            self.parent = parent
+        }
+
+        deinit {
+            if let scrollView {
+                scrollView.panGestureRecognizer.removeTarget(self, action: #selector(handlePan(_:)))
+            }
+            contentOffsetObservation?.invalidate()
+        }
+
+        func attach(from view: UIView) {
+            DispatchQueue.main.async { [weak self, weak view] in
+                guard let self, let view, let scrollView = view.enclosingScrollView else { return }
+                guard scrollView !== self.scrollView else { return }
+
+                if let existingScrollView = self.scrollView {
+                    existingScrollView.panGestureRecognizer.removeTarget(self, action: #selector(self.handlePan(_:)))
+                }
+
+                self.contentOffsetObservation?.invalidate()
+                self.scrollView = scrollView
+                scrollView.panGestureRecognizer.addTarget(self, action: #selector(self.handlePan(_:)))
+                self.contentOffsetObservation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] scrollView, _ in
+                    self?.parent.onOffsetChanged(self?.contentOffsetY(for: scrollView) ?? 0)
+                }
+                self.restoreInitialOffsetIfNeeded(in: scrollView)
+            }
+        }
+
+        private func restoreInitialOffsetIfNeeded(in scrollView: UIScrollView) {
+            guard !didRestoreInitialOffset else { return }
+            didRestoreInitialOffset = true
+
+            DispatchQueue.main.async { [weak self, weak scrollView] in
+                guard let self, let scrollView else { return }
+                let targetY = self.parent.topInset + self.parent.restoreContentOffsetY
+                let maxY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
+                let boundedY = min(max(targetY, 0), maxY)
+                scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: boundedY), animated: false)
+                self.parent.onOffsetChanged(self.contentOffsetY(for: scrollView))
+            }
+        }
+
+        @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
+            guard let scrollView else { return }
+
+            switch recognizer.state {
+            case .began, .changed:
+                isTrackingUserScroll = true
+            case .ended:
+                guard isTrackingUserScroll else { return }
+                finishUserScrollWhenSettled(in: scrollView)
+            case .cancelled, .failed:
+                if isTrackingUserScroll {
+                    finishUserScroll(in: scrollView)
+                }
+            default:
+                break
+            }
+        }
+
+        private func finishUserScrollWhenSettled(in scrollView: UIScrollView) {
+            guard scrollView.isDecelerating else {
+                finishUserScroll(in: scrollView)
+                return
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self, weak scrollView] in
+                guard let self, let scrollView else { return }
+                self.finishUserScrollWhenSettled(in: scrollView)
+            }
+        }
+
+        private func finishUserScroll(in scrollView: UIScrollView) {
+            isTrackingUserScroll = false
+            DispatchQueue.main.async { [weak self, weak scrollView] in
+                guard let self, let scrollView else { return }
+                self.parent.onUserScrollEnded(self.contentOffsetY(for: scrollView))
+            }
+        }
+
+        private func contentOffsetY(for scrollView: UIScrollView) -> CGFloat {
+            max(0, scrollView.contentOffset.y - parent.topInset)
+        }
+    }
+}
+
+private extension UIView {
+    var enclosingScrollView: UIScrollView? {
+        var view = superview
+        while let currentView = view {
+            if let scrollView = currentView as? UIScrollView {
+                return scrollView
+            }
+
+            view = currentView.superview
+        }
+
+        return nil
     }
 }
 
