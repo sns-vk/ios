@@ -1349,8 +1349,10 @@ private struct WeeklyAvailabilityGrid: View {
     @State private var movingOriginalWindow: AvailabilityMinuteWindow?
     @State private var resizingStartOriginalWindow: AvailabilityMinuteWindow?
     @State private var resizingEndOriginalWindow: AvailabilityMinuteWindow?
+    @State private var resizingPreviewWindow: AvailabilityMinuteWindow?
     @State private var creatingWindowID: AvailabilityWindow.ID?
-    @State private var createdWindowID: AvailabilityWindow.ID?
+    @State private var creatingDate: Date?
+    @State private var creatingPreviewWindow: AvailabilityMinuteWindow?
     @State private var scrollOffsetY: CGFloat = 0
     @State private var horizontalDragOffset: CGFloat = 0
     @State private var selectorVisibleStartIndex = 0
@@ -1369,6 +1371,7 @@ private struct WeeklyAvailabilityGrid: View {
     private let gridBottomPadding: CGFloat = 12
     private let trailingScrollHintWidth: CGFloat = 12
     private let horizontalSnapDuration: TimeInterval = 0.22
+    private let snapSettleDuration: TimeInterval = 0.18
     private let activeColor = Color.accentColor
     private let gridLineColor = Color(red: 0.88, green: 0.88, blue: 0.9)
     private let scrollViewCoordinateSpace = "AvailabilityGridScrollView"
@@ -1738,15 +1741,14 @@ private struct WeeklyAvailabilityGrid: View {
                 isEnabled: !isLocked,
                 onTap: {
                     activeWindowID = nil
-                    createdWindowID = nil
                 },
                 onChanged: { date, id, anchorY, currentY in
                     if creatingWindowID != id {
                         activeWindowID = nil
-                        createdWindowID = nil
                     }
                     creatingWindowID = id
-                    updateCreatingWindow(
+                    creatingDate = date
+                    creatingPreviewWindow = previewCreatingWindow(
                         id: id,
                         on: date,
                         anchorContentY: anchorY,
@@ -1754,9 +1756,11 @@ private struct WeeklyAvailabilityGrid: View {
                     )
                 },
                 onEnded: {
-                    activeWindowID = createdWindowID
-                    creatingWindowID = nil
-                    createdWindowID = nil
+                    if let creatingDate, let creatingPreviewWindow {
+                        finishCreatingWindow(creatingPreviewWindow, on: creatingDate)
+                    } else {
+                        clearCreatingWindow()
+                    }
                 }
             )
             .frame(width: dayStripWidth, height: height)
@@ -1804,36 +1808,75 @@ private struct WeeklyAvailabilityGrid: View {
 
     private func availabilityWindows(dayWidth: CGFloat) -> some View {
         ForEach(Array(weekDates.enumerated()), id: \.element) { dayIndex, date in
-            ForEach(appState.availabilityWindows(on: date, calendar: calendar)) { window in
-                let minuteWindow = minuteWindow(for: window, on: date)
-                let isCreating = !isLocked && creatingWindowID == window.id
-                let isActive = !isLocked && !isCreating && activeWindowID == window.id
-                let windowHeight = max(minuteHeight(minuteWindow.endMinute - minuteWindow.startMinute), 28)
-
-                AvailabilityWindowBlock(
-                    window: window,
-                    isActive: isActive,
-                    isLocked: isLocked,
-                    activeColor: activeColor,
-                    onEdit: {
-                        onEditWindow(window, date)
-                    },
-                    moveGesture: moveGesture(for: minuteWindow, on: date),
-                    resizeStartGesture: resizeStartGesture(for: minuteWindow, on: date),
-                    resizeEndGesture: resizeEndGesture(for: minuteWindow, on: date)
-                )
-                .frame(width: max(dayWidth - (slotHorizontalInset * 2), 26), height: windowHeight)
-                .position(
-                    x: (CGFloat(dayIndex) * dayWidth) + (dayWidth / 2),
-                    y: minuteY(minuteWindow.startMinute) + (windowHeight / 2)
-                )
-                .onTapGesture {
-                    guard !isLocked else { return }
-                    activeWindowID = window.id
+            Group {
+                ForEach(appState.availabilityWindows(on: date, calendar: calendar)) { window in
+                    if creatingPreviewWindow?.id != window.id {
+                        let minuteWindow = minuteWindow(for: window, on: date)
+                        availabilityWindowView(
+                            window: window,
+                            minuteWindow: minuteWindow,
+                            date: date,
+                            dayIndex: dayIndex,
+                            dayWidth: dayWidth,
+                            isCreating: false
+                        )
+                    }
                 }
-                .zIndex(isActive ? 2 : 1)
+
+                if let creatingPreviewWindow,
+                   let creatingDate,
+                   calendar.isDate(creatingDate, inSameDayAs: date) {
+                    let window = availabilityWindow(for: creatingPreviewWindow, on: date)
+                    availabilityWindowView(
+                        window: window,
+                        minuteWindow: creatingPreviewWindow,
+                        date: date,
+                        dayIndex: dayIndex,
+                        dayWidth: dayWidth,
+                        isCreating: creatingWindowID == creatingPreviewWindow.id
+                    )
+                }
             }
         }
+    }
+
+    private func availabilityWindowView(
+        window: AvailabilityWindow,
+        minuteWindow: AvailabilityMinuteWindow,
+        date: Date,
+        dayIndex: Int,
+        dayWidth: CGFloat,
+        isCreating: Bool
+    ) -> some View {
+        let displayMinuteWindow = resizingPreviewWindow?.id == minuteWindow.id
+            ? resizingPreviewWindow ?? minuteWindow
+            : minuteWindow
+        let displayWindow = availabilityWindow(for: displayMinuteWindow, on: date)
+        let isActive = !isLocked && !isCreating && activeWindowID == window.id
+        let windowHeight = max(minuteHeight(displayMinuteWindow.endMinute - displayMinuteWindow.startMinute), 28)
+
+        return AvailabilityWindowBlock(
+            window: displayWindow,
+            isActive: isActive,
+            isLocked: isLocked,
+            activeColor: activeColor,
+            onEdit: {
+                onEditWindow(window, date)
+            },
+            moveGesture: moveGesture(for: minuteWindow, on: date),
+            resizeStartGesture: resizeStartGesture(for: minuteWindow, on: date),
+            resizeEndGesture: resizeEndGesture(for: minuteWindow, on: date)
+        )
+        .frame(width: max(dayWidth - (slotHorizontalInset * 2), 26), height: windowHeight)
+        .position(
+            x: (CGFloat(dayIndex) * dayWidth) + (dayWidth / 2),
+            y: minuteY(displayMinuteWindow.startMinute) + (windowHeight / 2)
+        )
+        .onTapGesture {
+            guard !isLocked else { return }
+            activeWindowID = window.id
+        }
+        .zIndex(isActive ? 2 : isCreating ? 1.5 : 1)
     }
 
     private func horizontalDateDragGesture(dayWidth: CGFloat) -> some Gesture {
@@ -1941,9 +1984,26 @@ private struct WeeklyAvailabilityGrid: View {
                 resizingStartOriginalWindow = originalWindow
                 let grabOffsetY = boundedContentY(value.startLocation.y) - minuteY(originalWindow.startMinute)
                 let currentContentY = boundedContentY(value.location.y)
-                updateResizedStartWindow(originalWindow, on: date, targetContentY: currentContentY - grabOffsetY)
+                resizingPreviewWindow = previewResizedStartWindow(
+                    originalWindow,
+                    on: date,
+                    targetContentY: currentContentY - grabOffsetY
+                )
             }
-            .onEnded { _ in
+            .onEnded { value in
+                guard !isLocked else {
+                    resizingStartOriginalWindow = nil
+                    resizingPreviewWindow = nil
+                    return
+                }
+
+                let originalWindow = resizingStartOriginalWindow ?? minuteWindow
+                let grabOffsetY = boundedContentY(value.startLocation.y) - minuteY(originalWindow.startMinute)
+                let currentContentY = boundedContentY(value.location.y)
+                withAnimation(.easeOut(duration: snapSettleDuration)) {
+                    updateResizedStartWindow(originalWindow, on: date, targetContentY: currentContentY - grabOffsetY)
+                    resizingPreviewWindow = nil
+                }
                 resizingStartOriginalWindow = nil
             }
     }
@@ -1958,32 +2018,108 @@ private struct WeeklyAvailabilityGrid: View {
                 resizingEndOriginalWindow = originalWindow
                 let grabOffsetY = boundedContentY(value.startLocation.y) - minuteY(originalWindow.endMinute)
                 let currentContentY = boundedContentY(value.location.y)
-                updateResizedEndWindow(originalWindow, on: date, targetContentY: currentContentY - grabOffsetY)
+                resizingPreviewWindow = previewResizedEndWindow(
+                    originalWindow,
+                    on: date,
+                    targetContentY: currentContentY - grabOffsetY
+                )
             }
-            .onEnded { _ in
+            .onEnded { value in
+                guard !isLocked else {
+                    resizingEndOriginalWindow = nil
+                    resizingPreviewWindow = nil
+                    return
+                }
+
+                let originalWindow = resizingEndOriginalWindow ?? minuteWindow
+                let grabOffsetY = boundedContentY(value.startLocation.y) - minuteY(originalWindow.endMinute)
+                let currentContentY = boundedContentY(value.location.y)
+                withAnimation(.easeOut(duration: snapSettleDuration)) {
+                    updateResizedEndWindow(originalWindow, on: date, targetContentY: currentContentY - grabOffsetY)
+                    resizingPreviewWindow = nil
+                }
                 resizingEndOriginalWindow = nil
             }
     }
 
-    private func updateCreatingWindow(id: UUID, on date: Date, anchorContentY: CGFloat, currentContentY: CGFloat) {
+    private func previewCreatingWindow(
+        id: UUID,
+        on date: Date,
+        anchorContentY: CGFloat,
+        currentContentY: CGFloat
+    ) -> AvailabilityMinuteWindow? {
         let existingWindows = appState
             .availabilityMinuteWindows(on: date, calendar: calendar)
             .filter { $0.id != id }
-        guard var minuteWindow = WeeklyAvailabilityGridRules.createWindowMinutes(
-            anchorMinute: minute(forContentY: anchorContentY),
-            currentMinute: minute(forContentY: currentContentY),
-            existingWindows: existingWindows
+
+        let anchorRawMinute = rawMinute(forContentY: anchorContentY)
+        let anchorStartMinute = floorSnappedMinute(anchorRawMinute)
+        let anchorEndMinute = ceilingSnappedMinute(anchorRawMinute)
+        let current = rawMinute(forContentY: currentContentY)
+        let sortedWindows = existingWindows.sorted { $0.startMinute < $1.startMinute }
+
+        if current >= anchorRawMinute {
+            let nextStart = sortedWindows
+                .filter { $0.startMinute >= anchorStartMinute }
+                .map(\.startMinute)
+                .min() ?? WeeklyAvailabilityGridRules.endMinute
+            let end = min(max(current, anchorStartMinute + WeeklyAvailabilityGridRules.minimumDurationMinutes), nextStart)
+            guard end - anchorStartMinute >= WeeklyAvailabilityGridRules.minimumDurationMinutes else { return nil }
+            return AvailabilityMinuteWindow(id: id, startMinute: anchorStartMinute, endMinute: end)
+        }
+
+        let previousEnd = sortedWindows
+            .filter { $0.endMinute <= anchorEndMinute }
+            .map(\.endMinute)
+            .max() ?? WeeklyAvailabilityGridRules.startMinute
+        let start = max(min(current, anchorEndMinute - WeeklyAvailabilityGridRules.minimumDurationMinutes), previousEnd)
+        guard anchorEndMinute - start >= WeeklyAvailabilityGridRules.minimumDurationMinutes else { return nil }
+        return AvailabilityMinuteWindow(id: id, startMinute: start, endMinute: anchorEndMinute)
+    }
+
+    private func commitCreatingWindow(_ previewWindow: AvailabilityMinuteWindow, on date: Date) -> AvailabilityWindow? {
+        guard let minuteWindow = WeeklyAvailabilityGridRules.createWindowMinutes(
+            anchorMinute: previewWindow.startMinute,
+            currentMinute: previewWindow.endMinute,
+            existingWindows: appState.availabilityMinuteWindows(on: date, calendar: calendar)
         ) else {
+            return nil
+        }
+
+        return appState.upsertAvailabilityWindow(
+            AvailabilityMinuteWindow(
+                id: previewWindow.id,
+                startMinute: minuteWindow.startMinute,
+                endMinute: minuteWindow.endMinute
+            ),
+            on: date,
+            calendar: calendar
+        )
+    }
+
+    private func finishCreatingWindow(_ previewWindow: AvailabilityMinuteWindow, on date: Date) {
+        guard let savedWindow = commitCreatingWindow(previewWindow, on: date) else {
+            clearCreatingWindow()
             return
         }
 
-        minuteWindow = AvailabilityMinuteWindow(
-            id: id,
-            startMinute: minuteWindow.startMinute,
-            endMinute: minuteWindow.endMinute
-        )
-        let savedWindow = appState.upsertAvailabilityWindow(minuteWindow, on: date, calendar: calendar)
-        createdWindowID = savedWindow.id
+        let snappedWindow = minuteWindow(for: savedWindow, on: date)
+        withAnimation(.easeOut(duration: snapSettleDuration)) {
+            activeWindowID = savedWindow.id
+            creatingWindowID = nil
+            creatingPreviewWindow = snappedWindow
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + snapSettleDuration) {
+            guard creatingPreviewWindow?.id == snappedWindow.id else { return }
+            clearCreatingWindow()
+        }
+    }
+
+    private func clearCreatingWindow() {
+        creatingWindowID = nil
+        creatingDate = nil
+        creatingPreviewWindow = nil
     }
 
     private func updateMovedWindow(_ originalWindow: AvailabilityMinuteWindow, on date: Date, targetStartContentY: CGFloat) {
@@ -2016,11 +2152,60 @@ private struct WeeklyAvailabilityGrid: View {
         appState.upsertAvailabilityWindow(resizedWindow, on: date, calendar: calendar)
     }
 
+    private func previewResizedStartWindow(
+        _ originalWindow: AvailabilityMinuteWindow,
+        on date: Date,
+        targetContentY: CGFloat
+    ) -> AvailabilityMinuteWindow {
+        let existingWindows = appState.availabilityMinuteWindows(on: date, calendar: calendar)
+        let lowerBound = existingWindows
+            .filter { $0.id != originalWindow.id && $0.endMinute <= originalWindow.endMinute }
+            .map(\.endMinute)
+            .max() ?? WeeklyAvailabilityGridRules.startMinute
+        let upperBound = originalWindow.endMinute - WeeklyAvailabilityGridRules.minimumDurationMinutes
+        let startMinute = min(max(rawMinute(forContentY: targetContentY), lowerBound), upperBound)
+
+        return AvailabilityMinuteWindow(
+            id: originalWindow.id,
+            startMinute: startMinute,
+            endMinute: originalWindow.endMinute
+        )
+    }
+
+    private func previewResizedEndWindow(
+        _ originalWindow: AvailabilityMinuteWindow,
+        on date: Date,
+        targetContentY: CGFloat
+    ) -> AvailabilityMinuteWindow {
+        let existingWindows = appState.availabilityMinuteWindows(on: date, calendar: calendar)
+        let lowerBound = originalWindow.startMinute + WeeklyAvailabilityGridRules.minimumDurationMinutes
+        let upperBound = existingWindows
+            .filter { $0.id != originalWindow.id && $0.startMinute >= originalWindow.startMinute }
+            .map(\.startMinute)
+            .min() ?? WeeklyAvailabilityGridRules.endMinute
+        let endMinute = max(min(rawMinute(forContentY: targetContentY), upperBound), lowerBound)
+
+        return AvailabilityMinuteWindow(
+            id: originalWindow.id,
+            startMinute: originalWindow.startMinute,
+            endMinute: endMinute
+        )
+    }
+
     private func minuteWindow(for window: AvailabilityWindow, on date: Date) -> AvailabilityMinuteWindow {
         AvailabilityMinuteWindow(
             id: window.id,
             startMinute: minuteOffset(for: window.startTime, on: date),
             endMinute: minuteOffset(for: window.endTime, on: date)
+        )
+    }
+
+    private func availabilityWindow(for minuteWindow: AvailabilityMinuteWindow, on date: Date) -> AvailabilityWindow {
+        let day = calendar.startOfDay(for: date)
+        return AvailabilityWindow(
+            id: minuteWindow.id,
+            startTime: WeeklyAvailabilityCalendar.date(on: day, minuteOfDay: minuteWindow.startMinute, calendar: calendar),
+            endTime: WeeklyAvailabilityCalendar.date(on: day, minuteOfDay: minuteWindow.endMinute, calendar: calendar)
         )
     }
 
@@ -2031,8 +2216,24 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private func minute(forContentY y: CGFloat) -> Int {
-        let rawMinute = WeeklyAvailabilityGridRules.startMinute + Int((y / hourHeight) * 60)
-        return WeeklyAvailabilityGridRules.snap(rawMinute)
+        WeeklyAvailabilityGridRules.snap(rawMinute(forContentY: y))
+    }
+
+    private func floorSnappedMinute(_ minute: Int) -> Int {
+        let interval = WeeklyAvailabilityGridRules.snapIntervalMinutes
+        let snapped = (minute / interval) * interval
+        return min(max(snapped, WeeklyAvailabilityGridRules.startMinute), WeeklyAvailabilityGridRules.endMinute)
+    }
+
+    private func ceilingSnappedMinute(_ minute: Int) -> Int {
+        let interval = WeeklyAvailabilityGridRules.snapIntervalMinutes
+        let snapped = ((minute + interval - 1) / interval) * interval
+        return min(max(snapped, WeeklyAvailabilityGridRules.startMinute), WeeklyAvailabilityGridRules.endMinute)
+    }
+
+    private func rawMinute(forContentY y: CGFloat) -> Int {
+        let rawMinute = WeeklyAvailabilityGridRules.startMinute + Int((boundedContentY(y) / hourHeight) * 60)
+        return min(max(rawMinute, WeeklyAvailabilityGridRules.startMinute), WeeklyAvailabilityGridRules.endMinute)
     }
 
     private func boundedContentY(_ y: CGFloat) -> CGFloat {
