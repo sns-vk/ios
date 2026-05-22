@@ -769,7 +769,9 @@ private struct RootSearchView: View {
 private struct WeeklyBatchAvailabilityView: View {
     @Bindable var appState: AppState
     let isEnrolledInBatch: Bool
+    @State private var viewMode: AvailabilityViewMode = .multiDay
     @State private var activeWindowID: AvailabilityWindow.ID?
+    @State private var editingWindowContext: AvailabilityWindowEditContext?
 
     var body: some View {
         GeometryReader { proxy in
@@ -781,15 +783,25 @@ private struct WeeklyBatchAvailabilityView: View {
                     }
 
                 VStack(alignment: .leading, spacing: 16) {
-                    WeeklyAvailabilityEditor(
-                        appState: appState,
-                        isLocked: isEnrolledInBatch,
-                        gridHeight: gridHeight(
-                            for: proxy.size.height,
-                            bottomSafeArea: proxy.safeAreaInsets.bottom
-                        ),
-                        activeWindowID: $activeWindowID
-                    )
+                    switch viewMode {
+                    case .multiDay:
+                        WeeklyAvailabilityEditor(
+                            appState: appState,
+                            isLocked: isEnrolledInBatch,
+                            gridHeight: gridHeight(
+                                for: proxy.size.height,
+                                bottomSafeArea: proxy.safeAreaInsets.bottom
+                            ),
+                            activeWindowID: $activeWindowID,
+                            onEditWindow: editWindow
+                        )
+                    case .list:
+                        WeeklyAvailabilityListView(
+                            appState: appState,
+                            isLocked: isEnrolledInBatch,
+                            activeWindowID: $activeWindowID
+                        )
+                    }
                 }
                 .padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -808,10 +820,110 @@ private struct WeeklyBatchAvailabilityView: View {
                         activeWindowID = nil
                     }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 8) {
+                    Menu {
+                        Picker("View", selection: $viewMode) {
+                            ForEach(AvailabilityViewMode.allCases) { mode in
+                                Label(mode.label, systemImage: mode.systemImage)
+                                    .tag(mode)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: viewMode.systemImage)
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Availability View")
+
+                    Button {
+                        addSlot()
+                    } label: {
+                        Image(systemName: "plus")
+                            .frame(width: 44, height: 44)
+                    }
+                    .disabled(isEnrolledInBatch)
+                    .accessibilityLabel("Add Slot")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+            }
+        }
+        .sheet(item: $editingWindowContext) { context in
+            AvailabilityWindowEditSheet(
+                appState: appState,
+                context: context,
+                activeWindowID: $activeWindowID
+            )
+            .presentationDetents([.height(320)])
+            .presentationDragIndicator(.visible)
         }
         .onDisappear {
             activeWindowID = nil
         }
+    }
+
+    private var activeWindowEditContext: AvailabilityWindowEditContext? {
+        guard let activeWindowID else { return nil }
+
+        let calendar = WeeklyAvailabilityCalendar.configuredCalendar()
+        for availabilityDay in appState.weeklyAvailability {
+            if let window = availabilityDay.windows.first(where: { $0.id == activeWindowID }) {
+                return AvailabilityWindowEditContext(
+                    date: calendar.startOfDay(for: availabilityDay.date),
+                    window: window
+                )
+            }
+        }
+
+        return nil
+    }
+
+    private func editWindow(_ window: AvailabilityWindow, on date: Date) {
+        let calendar = WeeklyAvailabilityCalendar.configuredCalendar()
+        editingWindowContext = AvailabilityWindowEditContext(
+            date: calendar.startOfDay(for: date),
+            window: window
+        )
+    }
+
+    private func addSlot() {
+        let calendar = WeeklyAvailabilityCalendar.configuredCalendar()
+        guard let date = activeWindowEditContext?.date ?? WeeklyAvailabilityCalendar.nextWeekDates(calendar: calendar).first else {
+            return
+        }
+
+        let existingWindows = appState.availabilityMinuteWindows(on: date, calendar: calendar)
+        guard let minuteWindow = defaultNewSlot(existingWindows: existingWindows) else {
+            return
+        }
+
+        let savedWindow = appState.upsertAvailabilityWindow(minuteWindow, on: date, calendar: calendar)
+        activeWindowID = savedWindow.id
+        editingWindowContext = AvailabilityWindowEditContext(
+            date: calendar.startOfDay(for: date),
+            window: savedWindow
+        )
+    }
+
+    private func defaultNewSlot(existingWindows: [AvailabilityMinuteWindow]) -> AvailabilityMinuteWindow? {
+        let duration = 60
+        let preferredStartMinute = (17 * 60)
+        let latestStartMinute = WeeklyAvailabilityGridRules.endMinute - duration
+        let candidateStarts = Array(stride(from: preferredStartMinute, through: latestStartMinute, by: 30))
+            + Array(stride(from: WeeklyAvailabilityGridRules.startMinute, to: preferredStartMinute, by: 30))
+
+        guard let startMinute = candidateStarts.first(where: { startMinute in
+            let endMinute = startMinute + duration
+            return !existingWindows.contains { startMinute < $0.endMinute && endMinute > $0.startMinute }
+        }) else {
+            return nil
+        }
+
+        return AvailabilityMinuteWindow(
+            id: UUID(),
+            startMinute: startMinute,
+            endMinute: startMinute + duration
+        )
     }
 
     private func gridHeight(for containerHeight: CGFloat, bottomSafeArea: CGFloat) -> CGFloat {
@@ -821,11 +933,252 @@ private struct WeeklyBatchAvailabilityView: View {
     }
 }
 
+private enum AvailabilityViewMode: String, CaseIterable, Identifiable {
+    case multiDay
+    case list
+
+    var id: Self {
+        self
+    }
+
+    var label: String {
+        switch self {
+        case .multiDay:
+            return "Multi Day"
+        case .list:
+            return "List"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .multiDay:
+            return "calendar.day.timeline.leading"
+        case .list:
+            return "list.bullet"
+        }
+    }
+}
+
+private struct AvailabilityWindowEditContext: Identifiable {
+    let date: Date
+    let window: AvailabilityWindow
+
+    var id: AvailabilityWindow.ID {
+        window.id
+    }
+}
+
+private struct AvailabilityWindowEditSheet: View {
+    @Bindable var appState: AppState
+    let context: AvailabilityWindowEditContext
+    @Binding var activeWindowID: AvailabilityWindow.ID?
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var startTime: Date
+    @State private var endTime: Date
+
+    private var calendar: Calendar {
+        WeeklyAvailabilityCalendar.configuredCalendar()
+    }
+
+    private var startMinute: Int {
+        snappedMinute(from: startTime)
+    }
+
+    private var endMinute: Int {
+        snappedMinute(from: endTime, treatingMidnightAsEnd: true)
+    }
+
+    private var overlapsExistingWindow: Bool {
+        appState.availabilityMinuteWindows(on: context.date, calendar: calendar)
+            .filter { $0.id != context.id }
+            .contains { startMinute < $0.endMinute && endMinute > $0.startMinute }
+    }
+
+    private var canSave: Bool {
+        endMinute - startMinute >= WeeklyAvailabilityGridRules.minimumDurationMinutes
+            && !overlapsExistingWindow
+    }
+
+    init(
+        appState: AppState,
+        context: AvailabilityWindowEditContext,
+        activeWindowID: Binding<AvailabilityWindow.ID?>
+    ) {
+        self.appState = appState
+        self.context = context
+        self._activeWindowID = activeWindowID
+        self._startTime = State(initialValue: context.window.startTime)
+        self._endTime = State(initialValue: context.window.endTime)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    DatePicker("Start", selection: $startTime, displayedComponents: .hourAndMinute)
+                    DatePicker("End", selection: $endTime, displayedComponents: .hourAndMinute)
+                }
+
+                Section {
+                    Button(role: .destructive) {
+                        deleteWindow()
+                    } label: {
+                        Text("Delete Slot")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+            .navigationTitle("Edit Slot")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saveWindow()
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+    }
+
+    private func saveWindow() {
+        let editedWindow = AvailabilityMinuteWindow(
+            id: context.id,
+            startMinute: startMinute,
+            endMinute: endMinute
+        )
+        let savedWindow = appState.upsertAvailabilityWindow(editedWindow, on: context.date, calendar: calendar)
+        activeWindowID = savedWindow.id
+        dismiss()
+    }
+
+    private func deleteWindow() {
+        appState.removeAvailabilityWindow(context.id, on: context.date, calendar: calendar)
+        activeWindowID = nil
+        dismiss()
+    }
+
+    private func snappedMinute(from date: Date, treatingMidnightAsEnd: Bool = false) -> Int {
+        let components = calendar.dateComponents([.hour, .minute], from: date)
+        let minute = ((components.hour ?? 0) * 60) + (components.minute ?? 0)
+        if treatingMidnightAsEnd && minute == WeeklyAvailabilityGridRules.startMinute {
+            return WeeklyAvailabilityGridRules.endMinute
+        }
+
+        return WeeklyAvailabilityGridRules.snap(minute)
+    }
+}
+
+private struct WeeklyAvailabilityListView: View {
+    @Bindable var appState: AppState
+    let isLocked: Bool
+    @Binding var activeWindowID: AvailabilityWindow.ID?
+
+    private var calendar: Calendar {
+        WeeklyAvailabilityCalendar.configuredCalendar()
+    }
+
+    private var weekDates: [Date] {
+        WeeklyAvailabilityCalendar.nextWeekDates(calendar: calendar)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                ForEach(weekDates, id: \.self) { date in
+                    let windows = appState.availabilityWindows(on: date, calendar: calendar)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(dayTitle(for: date))
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+
+                        VStack(spacing: 0) {
+                            if windows.isEmpty {
+                                Text("No slots")
+                                    .font(.body)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                            } else {
+                                ForEach(windows) { window in
+                                    AvailabilitySlotListRow(
+                                        window: window,
+                                        isActive: activeWindowID == window.id
+                                    )
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        guard !isLocked else { return }
+                                        activeWindowID = window.id
+                                    }
+
+                                    if window.id != windows.last?.id {
+                                        Divider()
+                                            .padding(.leading, 16)
+                                    }
+                                }
+                            }
+                        }
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    }
+                }
+            }
+            .padding(.bottom, 96)
+        }
+        .scrollIndicators(.hidden)
+        .accessibilityIdentifier("Availability List")
+    }
+
+    private func dayTitle(for date: Date) -> String {
+        "\(date.formatted(.dateTime.weekday(.wide))) – \(date.formatted(.dateTime.month(.abbreviated).day()))"
+    }
+}
+
+private struct AvailabilitySlotListRow: View {
+    let window: AvailabilityWindow
+    let isActive: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "clock")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+
+            Text("\(window.startTime.formatted(date: .omitted, time: .shortened))–\(window.endTime.formatted(date: .omitted, time: .shortened))")
+                .font(.body)
+
+            Spacer()
+
+            if isActive {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.body)
+                    .foregroundStyle(.tint)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(isActive ? Color.accentColor.opacity(0.08) : Color.clear)
+    }
+}
+
 private struct WeeklyAvailabilityEditor: View {
     @Bindable var appState: AppState
     let isLocked: Bool
     let gridHeight: CGFloat
     @Binding var activeWindowID: AvailabilityWindow.ID?
+    let onEditWindow: (AvailabilityWindow, Date) -> Void
     @State private var visibleStartIndex = 0
 
     private let visibleDayCount = 2
@@ -883,7 +1236,8 @@ private struct WeeklyAvailabilityEditor: View {
                 visibleGridHeight: gridHeight,
                 activeWindowID: $activeWindowID,
                 onShiftVisibleDates: shiftVisibleDates,
-                onSelectVisibleStartIndex: selectVisibleStartIndex
+                onSelectVisibleStartIndex: selectVisibleStartIndex,
+                onEditWindow: onEditWindow
             )
             .padding(12)
             .background(Color(.secondarySystemGroupedBackground))
@@ -907,9 +1261,7 @@ private struct WeeklyAvailabilityEditor: View {
         guard nextIndex != visibleStartIndex else { return }
 
         clearActiveWindow()
-        withAnimation(.easeInOut(duration: 0.2)) {
-            visibleStartIndex = nextIndex
-        }
+        visibleStartIndex = nextIndex
     }
 
     private func clearActiveWindow() {
@@ -927,12 +1279,15 @@ private struct WeeklyAvailabilityGrid: View {
     @Binding var activeWindowID: AvailabilityWindow.ID?
     let onShiftVisibleDates: (Int) -> Void
     let onSelectVisibleStartIndex: (Int) -> Void
+    let onEditWindow: (AvailabilityWindow, Date) -> Void
 
     @State private var creatingWindowID: AvailabilityWindow.ID?
     @State private var movingOriginalWindow: AvailabilityMinuteWindow?
     @State private var resizingStartOriginalWindow: AvailabilityMinuteWindow?
     @State private var resizingEndOriginalWindow: AvailabilityMinuteWindow?
     @State private var scrollOffsetY: CGFloat = 0
+    @State private var horizontalDragOffset: CGFloat = 0
+    @State private var pendingHorizontalSnap: DispatchWorkItem?
 
     private let timeLabelWidth: CGFloat = 50
     private let hourHeight: CGFloat = 56
@@ -942,7 +1297,10 @@ private struct WeeklyAvailabilityGrid: View {
     private let initialTopMinute = (16 * 60) + 30
     private let slotHorizontalInset: CGFloat = 5
     private let bottomDragSlop: CGFloat = 28
+    private let gridBottomPadding: CGFloat = 12
+    private let horizontalSnapDuration: TimeInterval = 0.22
     private let activeColor = Color.accentColor
+    private let gridLineColor = Color(red: 0.88, green: 0.88, blue: 0.9)
     private let scrollViewCoordinateSpace = "AvailabilityGridScrollView"
     private let contentCoordinateSpace = "AvailabilityGridContent"
 
@@ -958,24 +1316,27 @@ private struct WeeklyAvailabilityGrid: View {
         CGFloat(WeeklyAvailabilityGridRules.endMinute - WeeklyAvailabilityGridRules.startMinute) / 60 * hourHeight
     }
 
-    private var bottomScrollInset: CGFloat {
-        max(visibleGridHeight - (contentHeight - minuteY(initialTopMinute)), 0)
-    }
-
     private var interactiveContentHeight: CGFloat {
         contentHeight + bottomDragSlop
     }
 
+    private var maxVisibleStartIndex: Int {
+        max(0, weekDates.count - visibleDayCount)
+    }
+
     var body: some View {
         GeometryReader { geometry in
-            let dayCount = max(visibleDates.count, 1)
-            let dayWidth = max((geometry.size.width - timeLabelWidth) / CGFloat(dayCount), 96)
+            let dayWidth = max((geometry.size.width - timeLabelWidth) / CGFloat(visibleDayCount), 96)
+            let dayViewportWidth = geometry.size.width - timeLabelWidth
+            let gridViewportHeight = max(visibleGridHeight - gridBottomPadding, 0)
+            let stripOffsetX = horizontalStripOffset(dayWidth: dayWidth)
+            let dayStripWidth = dayWidth * CGFloat(max(weekDates.count, 1))
 
             VStack(spacing: 0) {
                 weekSelector
                     .simultaneousGesture(clearActiveWindowGesture)
                 VStack(spacing: 0) {
-                    dayHeader(dayWidth: dayWidth)
+                    dayHeader(dayWidth: dayWidth, viewportWidth: dayViewportWidth, stripOffsetX: stripOffsetX)
                         .simultaneousGesture(clearActiveWindowGesture)
 
                     ScrollViewReader { proxy in
@@ -988,20 +1349,36 @@ private struct WeeklyAvailabilityGrid: View {
                                     scrollOffsetReader()
                                     scrollAnchors()
                                     gridLines(totalWidth: geometry.size.width, dayWidth: dayWidth)
-                                    creationColumns(dayWidth: dayWidth)
-                                    availabilityWindows(dayWidth: dayWidth)
+                                    timeGutterSeparator(height: interactiveContentHeight, showsShadow: true)
+                                    dayStrip(
+                                        dayWidth: dayWidth,
+                                        dayStripWidth: dayStripWidth,
+                                        height: interactiveContentHeight,
+                                        stripOffsetX: stripOffsetX
+                                    )
+                                    .frame(width: dayViewportWidth, height: interactiveContentHeight, alignment: .topLeading)
+                                    .clipped()
+                                    .overlay(alignment: .trailing) {
+                                        viewportTrailingSeparator(height: interactiveContentHeight)
+                                    }
+                                    .offset(x: timeLabelWidth)
                                 }
                                 .frame(width: geometry.size.width, height: interactiveContentHeight, alignment: .topLeading)
                                 .coordinateSpace(name: contentCoordinateSpace)
 
                                 Color.clear
-                                    .frame(height: bottomScrollInset)
+                                    .frame(height: bottomScrollInset(for: gridViewportHeight))
                             }
                         }
                         .coordinateSpace(name: scrollViewCoordinateSpace)
-                        .frame(height: visibleGridHeight)
+                        .frame(height: gridViewportHeight)
                         .background(alignment: .topLeading) {
-                            columnSeparators(dayWidth: dayWidth, height: visibleGridHeight)
+                            columnSeparators(dayWidth: dayWidth, height: gridViewportHeight, dayCount: weekDates.count)
+                                .frame(width: dayStripWidth, height: gridViewportHeight, alignment: .topLeading)
+                                .offset(x: stripOffsetX)
+                                .frame(width: dayViewportWidth, height: gridViewportHeight, alignment: .topLeading)
+                                .clipped()
+                                .offset(x: timeLabelWidth)
                         }
                         .clipped()
                         .contentMargins(.all, 0, for: .scrollContent)
@@ -1016,12 +1393,15 @@ private struct WeeklyAvailabilityGrid: View {
                             }
                         }
                     }
+
+                    Color.clear
+                        .frame(height: gridBottomPadding)
                 }
             }
+            .simultaneousGesture(horizontalDateDragGesture(dayWidth: dayWidth))
         }
         .frame(height: weekSelectorHeight + headerHeight + visibleGridHeight)
         .contentShape(Rectangle())
-        .simultaneousGesture(intervalSwipeGesture)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Weekly Availability Grid")
         .accessibilityIdentifier("Weekly Availability Grid")
@@ -1084,9 +1464,7 @@ private struct WeeklyAvailabilityGrid: View {
         }
         .frame(height: weekSelectorHeight)
         .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color(.separator).opacity(0.35))
-                .frame(height: 1)
+            dayDividerLine()
         }
     }
 
@@ -1102,29 +1480,42 @@ private struct WeeklyAvailabilityGrid: View {
         return .primary
     }
 
-    private func dayHeader(dayWidth: CGFloat) -> some View {
+    private func dayHeader(dayWidth: CGFloat, viewportWidth: CGFloat, stripOffsetX: CGFloat) -> some View {
         HStack(spacing: 0) {
             Color.clear
                 .frame(width: timeLabelWidth)
 
-            ForEach(visibleDates, id: \.self) { date in
-                Text(dayHeaderLabel(for: date))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                .frame(width: dayWidth, height: headerHeight)
-                .accessibilityIdentifier("Availability Day Header \(weekdayName(for: date))")
+            HStack(spacing: 0) {
+                ForEach(weekDates, id: \.self) { date in
+                    Text(dayHeaderLabel(for: date))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .frame(width: dayWidth, height: headerHeight)
+                        .accessibilityIdentifier("Availability Day Header \(weekdayName(for: date))")
+                }
+            }
+            .offset(x: stripOffsetX)
+            .frame(width: viewportWidth, height: headerHeight, alignment: .leading)
+            .clipped()
+            .overlay(alignment: .trailing) {
+                viewportTrailingSeparator(height: headerHeight)
             }
         }
         .background(Color(.secondarySystemGroupedBackground))
         .overlay(alignment: .topLeading) {
-            columnSeparators(dayWidth: dayWidth, height: headerHeight)
+            timeGutterSeparator(height: headerHeight, showsShadow: false)
+        }
+        .overlay(alignment: .topLeading) {
+            columnSeparators(dayWidth: dayWidth, height: headerHeight, dayCount: weekDates.count)
+                .offset(x: stripOffsetX)
+                .frame(width: viewportWidth, height: headerHeight, alignment: .topLeading)
+                .clipped()
+                .offset(x: timeLabelWidth)
         }
         .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color(.separator).opacity(0.35))
-                .frame(height: 1)
+            dayDividerLine()
         }
     }
 
@@ -1143,7 +1534,7 @@ private struct WeeklyAvailabilityGrid: View {
                     path.addLine(to: CGPoint(x: totalWidth, y: y))
                 }
             }
-            .stroke(Color(.separator).opacity(0.55), lineWidth: 1)
+            .stroke(gridLineColor, lineWidth: 1)
 
             ForEach(Array(stride(from: 0, through: 24, by: 1)), id: \.self) { hour in
                 Text(timeLabel(for: hour))
@@ -1155,16 +1546,70 @@ private struct WeeklyAvailabilityGrid: View {
         }
     }
 
-    private func columnSeparators(dayWidth: CGFloat, height: CGFloat) -> some View {
+    private func bottomScrollInset(for viewportHeight: CGFloat) -> CGFloat {
+        max(viewportHeight - (contentHeight - minuteY(initialTopMinute)), 0)
+    }
+
+    private func columnSeparators(dayWidth: CGFloat, height: CGFloat, dayCount: Int) -> some View {
         Path { path in
-            for dayIndex in 0...visibleDates.count {
-                let x = timeLabelWidth + (CGFloat(dayIndex) * dayWidth)
+            for dayIndex in 0...dayCount {
+                let x = CGFloat(dayIndex) * dayWidth
                 path.move(to: CGPoint(x: x, y: 0))
                 path.addLine(to: CGPoint(x: x, y: height))
             }
         }
-        .stroke(Color(.separator).opacity(0.55), lineWidth: 1)
+        .stroke(gridLineColor, lineWidth: 1)
         .allowsHitTesting(false)
+    }
+
+    private func timeGutterSeparator(height: CGFloat, showsShadow: Bool) -> some View {
+        ZStack(alignment: .topLeading) {
+            if showsShadow {
+                Rectangle()
+                    .fill(.black.opacity(0.08))
+                    .frame(width: 1, height: height)
+                    .blur(radius: 2)
+                    .offset(x: timeLabelWidth + 2)
+            }
+
+            Rectangle()
+                .fill(gridLineColor)
+                .frame(width: 1, height: height)
+                .offset(x: timeLabelWidth)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func viewportTrailingSeparator(height: CGFloat) -> some View {
+        Rectangle()
+            .fill(gridLineColor)
+            .frame(width: 1, height: height)
+            .allowsHitTesting(false)
+    }
+
+    private func dayDividerLine() -> some View {
+        ZStack(alignment: .top) {
+            Rectangle()
+                .fill(.black.opacity(0.08))
+                .frame(height: 1)
+                .blur(radius: 2)
+                .offset(y: 2)
+
+            Rectangle()
+                .fill(gridLineColor)
+                .frame(height: 1)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func dayStrip(dayWidth: CGFloat, dayStripWidth: CGFloat, height: CGFloat, stripOffsetX: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            columnSeparators(dayWidth: dayWidth, height: height, dayCount: weekDates.count)
+            creationColumns(dayWidth: dayWidth)
+            availabilityWindows(dayWidth: dayWidth)
+        }
+        .frame(width: dayStripWidth, height: height, alignment: .topLeading)
+        .offset(x: stripOffsetX)
     }
 
     private func scrollOffsetReader() -> some View {
@@ -1205,7 +1650,7 @@ private struct WeeklyAvailabilityGrid: View {
 
     private func creationColumns(dayWidth: CGFloat) -> some View {
         HStack(spacing: 0) {
-            ForEach(visibleDates, id: \.self) { date in
+            ForEach(weekDates, id: \.self) { date in
                 Rectangle()
                     .fill(Color(.systemBackground).opacity(0.001))
                     .contentShape(Rectangle())
@@ -1217,11 +1662,10 @@ private struct WeeklyAvailabilityGrid: View {
                     .accessibilityIdentifier("Availability Day \(weekdayName(for: date))")
             }
         }
-        .offset(x: timeLabelWidth)
     }
 
     private func availabilityWindows(dayWidth: CGFloat) -> some View {
-        ForEach(Array(visibleDates.enumerated()), id: \.element) { dayIndex, date in
+        ForEach(Array(weekDates.enumerated()), id: \.element) { dayIndex, date in
             ForEach(appState.availabilityWindows(on: date, calendar: calendar)) { window in
                 let minuteWindow = minuteWindow(for: window, on: date)
                 let isActive = !isLocked && activeWindowID == window.id
@@ -1232,9 +1676,8 @@ private struct WeeklyAvailabilityGrid: View {
                     isActive: isActive,
                     isLocked: isLocked,
                     activeColor: activeColor,
-                    onDelete: {
-                        appState.removeAvailabilityWindow(window.id, on: date, calendar: calendar)
-                        activeWindowID = nil
+                    onEdit: {
+                        onEditWindow(window, date)
                     },
                     moveGesture: moveGesture(for: minuteWindow, on: date),
                     resizeStartGesture: resizeStartGesture(for: minuteWindow, on: date),
@@ -1242,7 +1685,7 @@ private struct WeeklyAvailabilityGrid: View {
                 )
                 .frame(width: max(dayWidth - (slotHorizontalInset * 2), 26), height: windowHeight)
                 .position(
-                    x: timeLabelWidth + (CGFloat(dayIndex) * dayWidth) + (dayWidth / 2),
+                    x: (CGFloat(dayIndex) * dayWidth) + (dayWidth / 2),
                     y: minuteY(minuteWindow.startMinute) + (windowHeight / 2)
                 )
                 .onTapGesture {
@@ -1254,16 +1697,73 @@ private struct WeeklyAvailabilityGrid: View {
         }
     }
 
-    private var intervalSwipeGesture: some Gesture {
+    private func horizontalDateDragGesture(dayWidth: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 28)
-            .onEnded { value in
-                guard abs(value.translation.width) > abs(value.translation.height),
-                      abs(value.translation.width) > 48 else {
+            .onChanged { value in
+                pendingHorizontalSnap?.cancel()
+                pendingHorizontalSnap = nil
+
+                guard isHorizontalDateDrag(value) else {
+                    horizontalDragOffset = 0
                     return
                 }
 
-                onShiftVisibleDates(value.translation.width < 0 ? 1 : -1)
+                horizontalDragOffset = boundedHorizontalDrag(value.translation.width, dayWidth: dayWidth)
             }
+            .onEnded { value in
+                guard isHorizontalDateDrag(value) else {
+                    horizontalDragOffset = 0
+                    return
+                }
+
+                let proposedDayOffset = Int(round(-value.translation.width / dayWidth))
+                let targetStartIndex = boundedVisibleStartIndex(visibleStartIndex + proposedDayOffset)
+                let dayOffset = targetStartIndex - visibleStartIndex
+                guard dayOffset != 0 else {
+                    withAnimation(.easeOut(duration: horizontalSnapDuration)) {
+                        horizontalDragOffset = 0
+                    }
+                    return
+                }
+
+                withAnimation(.easeOut(duration: horizontalSnapDuration)) {
+                    horizontalDragOffset = boundedHorizontalDrag(-CGFloat(dayOffset) * dayWidth, dayWidth: dayWidth)
+                }
+
+                let snapWorkItem = DispatchWorkItem {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        horizontalDragOffset = 0
+                        onSelectVisibleStartIndex(targetStartIndex)
+                    }
+                    pendingHorizontalSnap = nil
+                }
+                pendingHorizontalSnap = snapWorkItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + horizontalSnapDuration, execute: snapWorkItem)
+            }
+    }
+
+    private func isHorizontalDateDrag(_ value: DragGesture.Value) -> Bool {
+        abs(value.translation.width) > abs(value.translation.height)
+            && abs(value.translation.width) > 24
+    }
+
+    private func horizontalStripOffset(dayWidth: CGFloat) -> CGFloat {
+        let baseOffset = -CGFloat(visibleStartIndex) * dayWidth
+        let proposedOffset = baseOffset + horizontalDragOffset
+        return min(max(proposedOffset, -CGFloat(maxVisibleStartIndex) * dayWidth), 0)
+    }
+
+    private func boundedHorizontalDrag(_ translation: CGFloat, dayWidth: CGFloat) -> CGFloat {
+        let baseOffset = -CGFloat(visibleStartIndex) * dayWidth
+        let proposedOffset = baseOffset + translation
+        let boundedOffset = min(max(proposedOffset, -CGFloat(maxVisibleStartIndex) * dayWidth), 0)
+        return boundedOffset - baseOffset
+    }
+
+    private func boundedVisibleStartIndex(_ index: Int) -> Int {
+        min(max(index, 0), maxVisibleStartIndex)
     }
 
     private var clearActiveWindowGesture: some Gesture {
@@ -1483,7 +1983,7 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
     let isActive: Bool
     let isLocked: Bool
     let activeColor: Color
-    let onDelete: () -> Void
+    let onEdit: () -> Void
     let moveGesture: MoveGesture
     let resizeStartGesture: ResizeStartGesture
     let resizeEndGesture: ResizeEndGesture
@@ -1526,16 +2026,21 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
                         .highPriorityGesture(resizeEndGesture)
                         .accessibilityIdentifier("Availability End Handle")
 
-                    Button(role: .destructive, action: onDelete) {
-                        Image(systemName: "trash")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(activeColor)
-                            .padding(5)
-                            .background(.thinMaterial, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .position(x: proxy.size.width - 12, y: 12)
-                    .accessibilityIdentifier("Delete Availability Window")
+                    Image(systemName: "pencil")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                        .highPriorityGesture(
+                            TapGesture()
+                                .onEnded {
+                                    onEdit()
+                                }
+                        )
+                        .position(x: proxy.size.width - 12, y: 12)
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityLabel("Edit Selected Slot")
+                        .accessibilityIdentifier("Edit Availability Window")
                 }
             }
         }
