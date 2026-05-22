@@ -1851,12 +1851,12 @@ private struct WeeklyAvailabilityGrid: View {
         let displayMinuteWindow = resizingPreviewWindow?.id == minuteWindow.id
             ? resizingPreviewWindow ?? minuteWindow
             : minuteWindow
-        let displayWindow = availabilityWindow(for: displayMinuteWindow, on: date)
+        let labelWindow = availabilityWindow(for: labelMinuteWindow(for: displayMinuteWindow), on: date)
         let isActive = !isLocked && !isCreating && activeWindowID == window.id
         let windowHeight = max(minuteHeight(displayMinuteWindow.endMinute - displayMinuteWindow.startMinute), 28)
 
         return AvailabilityWindowBlock(
-            window: displayWindow,
+            window: labelWindow,
             isActive: isActive,
             isLocked: isLocked,
             activeColor: activeColor,
@@ -2209,6 +2209,14 @@ private struct WeeklyAvailabilityGrid: View {
         )
     }
 
+    private func labelMinuteWindow(for minuteWindow: AvailabilityMinuteWindow) -> AvailabilityMinuteWindow {
+        AvailabilityMinuteWindow(
+            id: minuteWindow.id,
+            startMinute: snappedMinute(minuteWindow.startMinute),
+            endMinute: snappedMinute(minuteWindow.endMinute)
+        )
+    }
+
     private func minuteOffset(for time: Date, on date: Date) -> Int {
         let day = calendar.startOfDay(for: date)
         let rawMinute = Int((time.timeIntervalSince(day) / 60).rounded())
@@ -2217,6 +2225,10 @@ private struct WeeklyAvailabilityGrid: View {
 
     private func minute(forContentY y: CGFloat) -> Int {
         WeeklyAvailabilityGridRules.snap(rawMinute(forContentY: y))
+    }
+
+    private func snappedMinute(_ minute: Int) -> Int {
+        WeeklyAvailabilityGridRules.snap(minute)
     }
 
     private func floorSnappedMinute(_ minute: Int) -> Int {
