@@ -2,16 +2,6 @@ import SwiftUI
 import UIKit
 import PhotosUI
 
-struct SettingsView: View {
-    @Bindable var appState: AppState
-
-    var body: some View {
-        NavigationStack {
-            ProfileTabView(appState: appState)
-        }
-    }
-}
-
 struct ProfileTabView: View {
     @Bindable var appState: AppState
 
