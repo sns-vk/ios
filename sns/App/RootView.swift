@@ -7,6 +7,7 @@ struct RootView: View {
     @State private var homeViewModel = HomeViewModel()
     @State private var showNetworkInfoPopup = false
     @State private var enrollmentShimmerTrigger = 0
+    @State private var matchCardShimmerTrigger = 0
     @State private var hasShownMatchTab = false
 
     var body: some View {
@@ -33,6 +34,7 @@ struct RootView: View {
                     }
                     .onAppear {
                         triggerEnrollmentShimmerAfterFirstAppearance()
+                        triggerMatchCardShimmerIfNeeded()
                     }
                     .navigationDestination(for: RootDestination.self) { destination in
                         rootDestination(for: destination)
@@ -82,6 +84,11 @@ struct RootView: View {
         .onChange(of: router.selectedTab) { _, newTab in
             guard newTab == .match else { return }
             triggerEnrollmentShimmerAfterFirstAppearance()
+            triggerMatchCardShimmerIfNeeded()
+        }
+        .onChange(of: homeViewModel.hasMatchThisWeek) { _, hasMatch in
+            guard hasMatch else { return }
+            triggerMatchCardShimmerIfNeeded()
         }
     }
 
@@ -140,6 +147,7 @@ struct RootView: View {
             NavigationLink(value: RootDestination.matchProfile) {
                 anonymousMatchProfile(profile: homeViewModel.matchProfile)
             }
+            .listRowBackground(MatchCardShimmerBackground(trigger: matchCardShimmerTrigger))
             .accessibilityIdentifier("Weekly Match Row")
         } else {
             HStack(alignment: .center, spacing: 14) {
@@ -336,6 +344,11 @@ struct RootView: View {
         enrollmentShimmerTrigger += 1
     }
 
+    private func triggerMatchCardShimmerIfNeeded() {
+        guard homeViewModel.hasMatchThisWeek else { return }
+        matchCardShimmerTrigger += 1
+    }
+
     @ViewBuilder
     private func rootPageDestination(for page: RootSearchPage) -> some View {
         switch page {
@@ -459,6 +472,57 @@ struct RootView: View {
                 appState.acceptedSubstanceUse[category] = newValue
             }
         )
+    }
+}
+
+private struct MatchCardShimmerBackground: View {
+    let trigger: Int
+    @State private var shimmerPhase: CGFloat = 1.2
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .fill(Color(.secondarySystemGroupedBackground))
+            .overlay {
+                GeometryReader { proxy in
+                    let width = proxy.size.width
+
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .clear, location: 0),
+                                    .init(color: Color.accentColor.opacity(0.2), location: 0.5),
+                                    .init(color: .clear, location: 1)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: width * 0.7)
+                        .offset(x: shimmerPhase * width)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            }
+            .onAppear {
+                playShimmer()
+            }
+            .onChange(of: trigger) { _, _ in
+                playShimmer()
+            }
+    }
+
+    private func playShimmer() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            shimmerPhase = -0.75
+        }
+
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 1.1)) {
+                shimmerPhase = 1.2
+            }
+        }
     }
 }
 
