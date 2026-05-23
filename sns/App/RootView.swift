@@ -1539,6 +1539,10 @@ private struct WeeklyAvailabilityGrid: View {
         max(0, weekDates.count - visibleDayCount)
     }
 
+    private var isAvailabilityInteractionActive: Bool {
+        isWindowGestureActive || creatingWindowID != nil
+    }
+
     init(
         appState: AppState,
         isLocked: Bool,
@@ -1938,6 +1942,10 @@ private struct WeeklyAvailabilityGrid: View {
                         activeWindowID = nil
                         creatingDirection = nil
                     }
+                    isWindowGestureActive = true
+                    pendingHorizontalSnap?.cancel()
+                    pendingHorizontalSnap = nil
+                    horizontalDragOffset = 0
                     let nextDirection = creationDirection(
                         anchorContentY: anchorY,
                         currentContentY: currentY
@@ -1963,6 +1971,7 @@ private struct WeeklyAvailabilityGrid: View {
                     } else {
                         clearCreatingWindow()
                     }
+                    resetWindowGestureState()
                 }
             )
             .frame(width: dayStripWidth, height: height)
@@ -2164,7 +2173,7 @@ private struct WeeklyAvailabilityGrid: View {
                 pendingHorizontalSnap?.cancel()
                 pendingHorizontalSnap = nil
 
-                guard !isWindowGestureActive else {
+                guard !isAvailabilityInteractionActive else {
                     horizontalDragOffset = 0
                     return
                 }
@@ -2181,7 +2190,7 @@ private struct WeeklyAvailabilityGrid: View {
                 horizontalDragOffset = boundedHorizontalDrag(value.translation.width, dayWidth: dayWidth)
             }
             .onEnded { value in
-                guard !isWindowGestureActive else {
+                guard !isAvailabilityInteractionActive else {
                     horizontalDragOffset = 0
                     resetHorizontalDateGestureState()
                     return
