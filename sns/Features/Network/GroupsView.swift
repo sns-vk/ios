@@ -26,6 +26,7 @@ struct GroupsView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .listSectionSpacing(.custom(14))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -111,11 +112,11 @@ private struct GroupAvatar: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(Color.accentColor.opacity(0.16))
+                .fill(Color.secondary)
 
             Text(initials)
-                .font(.system(size: 20, weight: .semibold, design: .serif))
-                .foregroundStyle(Color.accentColor)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(Color(.systemBackground))
         }
         .frame(width: 56, height: 56)
     }
