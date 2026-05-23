@@ -639,25 +639,15 @@ struct AgeRangePreferenceView: View {
     var body: some View {
         Form {
             Section {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text(AgeDisplay.rangeLabel(min: preferredAgeMin, max: preferredAgeMax))
-                        .font(.title2.weight(.semibold))
-
+                VStack(alignment: .leading, spacing: 0) {
                     AgeRangeSlider(
                         minValue: $preferredAgeMin,
                         maxValue: $preferredAgeMax,
-                        bounds: AgeDisplay.bounds
+                        bounds: AgeDisplay.bounds,
+                        valueLabel: { AgeDisplay.label(for: $0) }
                     )
-                    .frame(height: 36)
+                    .frame(height: 62)
                     .accessibilityIdentifier("Age Range Slider")
-
-                    HStack {
-                        Text("\(AgeDisplay.bounds.lowerBound)")
-                        Spacer()
-                        Text("\(AgeDisplay.bounds.upperBound)+")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 6)
             } footer: {

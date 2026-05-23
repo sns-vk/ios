@@ -117,7 +117,7 @@ enum RootSearchPage: String, CaseIterable, Identifiable {
         case .groups: "Groups"
         case .logbook: "Logbook"
         case .location: "Location"
-        case .radius: "Radius"
+        case .radius: "Maximum Radius"
         case .matchWith: "Gender"
         case .sexuality: "Sexuality"
         case .substanceUse: "Substance Use"

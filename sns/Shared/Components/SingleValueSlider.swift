@@ -7,19 +7,23 @@ struct SingleValueSlider: View {
 
     let bounds: ClosedRange<Int>
     let accessibilityLabel: String
+    let valueLabel: ((Int) -> String)?
 
     init(
         value: Binding<Int>,
         bounds: ClosedRange<Int>,
-        accessibilityLabel: String = "Slider"
+        accessibilityLabel: String = "Slider",
+        valueLabel: ((Int) -> String)? = nil
     ) {
         self._value = value
         self.bounds = bounds
         self.accessibilityLabel = accessibilityLabel
+        self.valueLabel = valueLabel
     }
 
-    private let thumbSize: CGFloat = 26
+    private let thumbSize: CGFloat = 32
     private let trackHeight: CGFloat = 6
+    private let valueLabelWidth: CGFloat = 112
     private let snapAnimation = Animation.easeOut(duration: 0.18)
 
     var body: some View {
@@ -27,23 +31,26 @@ struct SingleValueSlider: View {
             let usableWidth = max(1, geometry.size.width - thumbSize)
             let displayFraction = activeDragFraction ?? fraction(for: value)
             let centerX = xPosition(forFraction: displayFraction, usableWidth: usableWidth)
+            let hasValueLabel = valueLabel != nil
+            let sliderCenterY = hasValueLabel ? max(thumbSize / 2, geometry.size.height - 20) : geometry.size.height / 2
+            let labelX = centerX - (valueLabelWidth / 2)
 
-            ZStack(alignment: .leading) {
+            ZStack(alignment: .topLeading) {
                 Capsule()
                     .fill(Color.gray.opacity(0.25))
                     .frame(height: trackHeight)
-                    .padding(.horizontal, thumbSize / 2)
+                    .offset(y: sliderCenterY - (trackHeight / 2))
 
                 Capsule()
                     .fill(Color.accentColor)
-                    .frame(width: max(0, centerX - (thumbSize / 2)), height: trackHeight)
-                    .offset(x: thumbSize / 2)
+                    .frame(width: geometry.size.width * displayFraction, height: trackHeight)
+                    .offset(y: sliderCenterY - (trackHeight / 2))
 
                 Circle()
                     .fill(Color.white)
                     .overlay(Circle().stroke(Color.accentColor, lineWidth: 2))
                     .frame(width: thumbSize, height: thumbSize)
-                    .offset(x: centerX - (thumbSize / 2))
+                    .offset(x: centerX - (thumbSize / 2), y: sliderCenterY - (thumbSize / 2))
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { gestureValue in
@@ -68,8 +75,17 @@ struct SingleValueSlider: View {
                                 }
                             }
                     )
+
+                if let valueLabel {
+                    Text(valueLabel(value))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .frame(width: valueLabelWidth, alignment: .center)
+                        .offset(x: labelX)
+                }
             }
-            .frame(maxHeight: .infinity)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)

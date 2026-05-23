@@ -7,25 +7,15 @@ struct MatchingRadiusView: View {
     var body: some View {
         Form {
             Section {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("Within \(radiusMiles) mi")
-                        .font(.title2.weight(.semibold))
-
+                VStack(alignment: .leading, spacing: 0) {
                     SingleValueSlider(
                         value: $radiusMiles,
                         bounds: 1...50,
-                        accessibilityLabel: "Radius Slider"
+                        accessibilityLabel: "Radius Slider",
+                        valueLabel: { "\($0) mi" }
                     )
-                        .frame(height: 36)
+                        .frame(height: 62)
                         .accessibilityIdentifier("Radius Slider")
-
-                    HStack {
-                        Text("1 mi")
-                        Spacer()
-                        Text("50 mi")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 6)
             }
@@ -40,10 +30,11 @@ struct MatchingRadiusView: View {
 
                         Spacer()
 
-                        Image(systemName: extendRadiusIfNeeded ? "checkmark.circle.fill" : "circle")
-                            .font(.title3)
-                            .foregroundStyle(extendRadiusIfNeeded ? Color.accentColor : Color.secondary)
-                            .accessibilityHidden(true)
+                        if extendRadiusIfNeeded {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.tint)
+                                .accessibilityHidden(true)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
@@ -51,6 +42,6 @@ struct MatchingRadiusView: View {
                 .buttonStyle(.plain)
             }
         }
-        .navigationTitle("Radius")
+        .navigationTitle("Maximum Radius")
     }
 }
