@@ -159,7 +159,7 @@ struct MatchCriteriaSnapshot: Hashable {
     }
 
     var radiusSummary: String {
-        extendRadiusIfNeeded ? "Within \(radiusMiles) mi, flexible" : "Within \(radiusMiles) mi"
+        extendRadiusIfNeeded ? "\(radiusMiles) mi, flexible" : "\(radiusMiles) mi"
     }
 
     var ageRangeSummary: String {

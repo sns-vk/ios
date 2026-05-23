@@ -247,7 +247,7 @@ struct RootView: View {
             .accessibilityIdentifier("Contacts Row")
 
             NavigationLink(value: RootDestination.page(.groups)) {
-                valueRow(title: "Groups", value: "\(appState.groups.count)", systemImage: "rectangle.3.group.fill")
+                valueRow(title: "Groups", value: "\(appState.groups.count)", systemImage: "venn.diagram.fill")
             }
             .accessibilityIdentifier("Groups Row")
         } header: {
@@ -275,9 +275,7 @@ struct RootView: View {
 
     private func valueRow(title: String, value: String, systemImage: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
+            rowIcon(systemImage)
 
             Text(title)
 
@@ -582,9 +580,7 @@ private struct MatchProfileView: View {
 
     private func matchDetailRow(title: String, value: String, systemImage: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
+            rowIcon(systemImage)
 
             Text(title)
 
@@ -636,14 +632,14 @@ private struct MatchCriteriaView: View {
                 .accessibilityIdentifier("Location Row")
 
                 NavigationLink(value: RootDestination.page(.radius)) {
-                    valueRow(title: "Radius", value: "Within \(appState.matchingRadiusMiles) mi", systemImage: "scope")
+                    valueRow(title: "Maximum Radius", value: "\(appState.matchingRadiusMiles) mi", systemImage: "scope")
                 }
                 .accessibilityIdentifier("Radius Row")
             }
 
             Section("Demographics") {
                 NavigationLink(value: RootDestination.page(.ageRange)) {
-                    valueRow(title: "Age Range", value: appState.currentMatchCriteriaSnapshot.ageRangeSummary, systemImage: "calendar")
+                    valueRow(title: "Age Range", value: appState.currentMatchCriteriaSnapshot.ageRangeSummary, systemImage: "number")
                 }
                 .accessibilityIdentifier("Age Range Row")
 
@@ -677,9 +673,7 @@ private struct MatchCriteriaView: View {
 
     private func valueRow(title: String, value: String, systemImage: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
+            rowIcon(systemImage)
 
             Text(title)
 
@@ -794,7 +788,7 @@ private struct RootSearchView: View {
                         Button {
                             selectedGroupID = id
                         } label: {
-                            valueRow(title: group.wrappedValue.name, value: "\(group.wrappedValue.members.count) members", systemImage: "person.2.fill")
+                            valueRow(title: group.wrappedValue.name, value: "\(group.wrappedValue.members.count) members", systemImage: "venn.diagram.fill")
                         }
                         .buttonStyle(.plain)
                     }
@@ -805,9 +799,7 @@ private struct RootSearchView: View {
 
     private func valueRow(title: String, value: String, systemImage: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
+            rowIcon(systemImage)
 
             Text(title)
 
@@ -3175,6 +3167,16 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
     }
 }
 
+@ViewBuilder
+private func rowIcon(_ systemImage: String) -> some View {
+    if systemImage == "venn.diagram.fill" {
+        VennDiagramIcon()
+    } else {
+        Image(systemName: systemImage)
+            .foregroundStyle(.secondary)
+            .frame(width: 22)
+    }
+}
 
 #Preview {
     RootView()

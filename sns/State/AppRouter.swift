@@ -130,7 +130,7 @@ enum RootSearchPage: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .contacts: "person.2.fill"
-        case .groups: "rectangle.3.group.fill"
+        case .groups: "venn.diagram.fill"
         case .logbook: "checklist"
         case .location: "location.fill"
         case .radius: "scope"

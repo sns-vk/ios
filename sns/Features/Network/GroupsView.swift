@@ -514,8 +514,7 @@ struct AddContactToGroupsSheetView: View {
                             dismiss()
                         } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: "person.2.fill")
-                                    .foregroundStyle(.secondary)
+                                VennDiagramIcon()
                                 Text(groups[groupIndex].name)
                                 Spacer()
                                 Image(systemName: "plus.circle.fill")
