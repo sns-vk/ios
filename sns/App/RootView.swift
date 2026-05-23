@@ -1090,8 +1090,8 @@ private struct AvailabilityWindowEditSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    DatePicker("Start", selection: $startTime, displayedComponents: .hourAndMinute)
-                    DatePicker("End", selection: $endTime, displayedComponents: .hourAndMinute)
+                    CompactIntervalTimePickerRow(label: "Start", selection: $startTime)
+                    CompactIntervalTimePickerRow(label: "End", selection: $endTime)
                 }
 
                 Section {
@@ -1147,6 +1147,71 @@ private struct AvailabilityWindowEditSheet: View {
         }
 
         return WeeklyAvailabilityGridRules.snap(minute)
+    }
+}
+
+private struct CompactIntervalTimePickerRow: View {
+    let label: String
+    @Binding var selection: Date
+
+    var body: some View {
+        HStack {
+            Text(label)
+
+            Spacer()
+
+            CompactIntervalTimePicker(
+                selection: $selection,
+                minuteInterval: WeeklyAvailabilityGridRules.snapIntervalMinutes
+            )
+            .frame(height: 36)
+            .accessibilityLabel(label)
+        }
+        .frame(minHeight: 44)
+    }
+}
+
+private struct CompactIntervalTimePicker: UIViewRepresentable {
+    @Binding var selection: Date
+    let minuteInterval: Int
+
+    func makeUIView(context: Context) -> UIDatePicker {
+        let picker = UIDatePicker()
+        picker.datePickerMode = .time
+        picker.preferredDatePickerStyle = .compact
+        picker.minuteInterval = minuteInterval
+        picker.setContentCompressionResistancePriority(.required, for: .vertical)
+        picker.setContentHuggingPriority(.required, for: .vertical)
+        picker.addTarget(
+            context.coordinator,
+            action: #selector(Coordinator.dateChanged(_:)),
+            for: .valueChanged
+        )
+        return picker
+    }
+
+    func updateUIView(_ picker: UIDatePicker, context: Context) {
+        picker.minuteInterval = minuteInterval
+
+        if picker.date != selection {
+            picker.date = selection
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selection: $selection)
+    }
+
+    final class Coordinator: NSObject {
+        @Binding private var selection: Date
+
+        init(selection: Binding<Date>) {
+            self._selection = selection
+        }
+
+        @objc func dateChanged(_ picker: UIDatePicker) {
+            selection = picker.date
+        }
     }
 }
 
