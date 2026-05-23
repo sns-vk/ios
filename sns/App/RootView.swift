@@ -1414,6 +1414,13 @@ private enum AvailabilityCreationDirection {
     case downward
 }
 
+private struct AvailabilityEditButtonPlacement {
+    let window: AvailabilityWindow
+    let date: Date
+    let x: CGFloat
+    let y: CGFloat
+}
+
 private struct WeeklyAvailabilityGrid: View {
     @Bindable var appState: AppState
     let isLocked: Bool
@@ -1454,6 +1461,7 @@ private struct WeeklyAvailabilityGrid: View {
     private let bottomDragSlop: CGFloat = 28
     private let gridBottomPadding: CGFloat = 0
     private let slotControlOverflow: CGFloat = 22
+    private let editButtonSize: CGFloat = 32
     private let horizontalSnapDuration: TimeInterval = 0.22
     private let snapSettleDuration: TimeInterval = 0.18
     private let horizontalRubberBandResistance: CGFloat = 0.55
@@ -1531,7 +1539,7 @@ private struct WeeklyAvailabilityGrid: View {
                                 .frame(height: topScrollInset)
 
                             ZStack(alignment: .topLeading) {
-                                gridLines(totalWidth: geometry.size.width, dayWidth: dayWidth)
+                                gridLines(totalWidth: geometry.size.width)
                                 dayStrip(
                                     dayWidth: dayWidth,
                                     dayStripWidth: dayStripWidth,
@@ -1542,6 +1550,14 @@ private struct WeeklyAvailabilityGrid: View {
                                 .frame(width: dayViewportWidth + slotControlOverflow, height: interactiveContentHeight, alignment: .topLeading)
                                 .clipped()
                                 .offset(x: timeLabelWidth)
+
+                                activeEditButtonOverlay(
+                                    dayWidth: dayWidth,
+                                    height: interactiveContentHeight,
+                                    stripOffsetX: stripOffsetX
+                                )
+
+                                timeGutterForeground(height: interactiveContentHeight)
                             }
                             .frame(width: geometry.size.width, height: interactiveContentHeight, alignment: .topLeading)
                             .coordinateSpace(name: contentCoordinateSpace)
@@ -1566,7 +1582,7 @@ private struct WeeklyAvailabilityGrid: View {
                     .frame(height: gridViewportHeight)
                     .background(alignment: .topLeading) {
                         ZStack(alignment: .topLeading) {
-                            timeGutterSeparator(height: gridViewportHeight, showsShadow: true)
+                            timeGutterSeparator(height: gridViewportHeight)
 
                             columnSeparators(dayWidth: dayWidth, height: gridViewportHeight, dayCount: weekDates.count)
                                 .frame(width: dayStripWidth, height: gridViewportHeight, alignment: .topLeading)
@@ -1744,7 +1760,7 @@ private struct WeeklyAvailabilityGrid: View {
         }
         .background(Color(.secondarySystemGroupedBackground))
         .overlay(alignment: .topLeading) {
-            timeGutterSeparator(height: headerHeight, showsShadow: true)
+            timeGutterSeparator(height: headerHeight)
         }
         .overlay(alignment: .topLeading) {
             columnSeparators(dayWidth: dayWidth, height: headerHeight, dayCount: weekDates.count)
@@ -1764,25 +1780,40 @@ private struct WeeklyAvailabilityGrid: View {
         return "\(date.formatted(.dateTime.weekday(.wide))) - \(month)/\(day)"
     }
 
-    private func gridLines(totalWidth: CGFloat, dayWidth: CGFloat) -> some View {
-        ZStack(alignment: .topLeading) {
-            Path { path in
-                for hour in 0...24 {
-                    let y = minuteY(hour * 60)
-                    path.move(to: CGPoint(x: timeLabelWidth, y: y))
-                    path.addLine(to: CGPoint(x: totalWidth, y: y))
-                }
-            }
-            .stroke(gridLineColor, lineWidth: 1)
-
-            ForEach(Array(stride(from: 0, through: 24, by: 1)), id: \.self) { hour in
-                Text(timeLabel(for: hour))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: timeLabelWidth - 6, alignment: .trailing)
-                    .offset(x: 0, y: minuteY(hour * 60) - 8)
+    private func gridLines(totalWidth: CGFloat) -> some View {
+        Path { path in
+            for hour in 0...24 {
+                let y = minuteY(hour * 60)
+                path.move(to: CGPoint(x: timeLabelWidth, y: y))
+                path.addLine(to: CGPoint(x: totalWidth, y: y))
             }
         }
+        .stroke(gridLineColor, lineWidth: 1)
+        .allowsHitTesting(false)
+    }
+
+    private func timeLabels() -> some View {
+        ForEach(Array(stride(from: 0, through: 24, by: 1)), id: \.self) { hour in
+            Text(timeLabel(for: hour))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: timeLabelWidth - 6, alignment: .trailing)
+                .offset(x: 0, y: minuteY(hour * 60) - 8)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func timeGutterForeground(height: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(Color(.secondarySystemGroupedBackground))
+                .frame(width: timeLabelWidth, height: height)
+
+            timeGutterSeparator(height: height)
+
+            timeLabels()
+        }
+        .allowsHitTesting(false)
     }
 
     private func bottomScrollInset(for viewportHeight: CGFloat) -> CGFloat {
@@ -1801,41 +1832,18 @@ private struct WeeklyAvailabilityGrid: View {
         .allowsHitTesting(false)
     }
 
-    private func timeGutterSeparator(height: CGFloat, showsShadow: Bool) -> some View {
-        ZStack(alignment: .topLeading) {
-            if showsShadow {
-                timeGutterShadow(height: height)
-            }
-
-            Rectangle()
-                .fill(gridLineColor)
-                .frame(width: 1, height: height)
-                .offset(x: timeLabelWidth)
-        }
+    private func timeGutterSeparator(height: CGFloat) -> some View {
+        Rectangle()
+            .fill(gridLineColor)
+            .frame(width: 1, height: height)
+            .offset(x: timeLabelWidth)
         .allowsHitTesting(false)
     }
 
-    private func timeGutterShadow(height: CGFloat) -> some View {
-        Rectangle()
-            .fill(.black.opacity(0.08))
-            .frame(width: 1, height: height)
-            .blur(radius: 2)
-            .offset(x: timeLabelWidth + 2)
-            .allowsHitTesting(false)
-    }
-
     private func dayDividerLine() -> some View {
-        ZStack(alignment: .top) {
-            Rectangle()
-                .fill(.black.opacity(0.08))
-                .frame(height: 1)
-                .blur(radius: 2)
-                .offset(y: 2)
-
-            Rectangle()
-                .fill(gridLineColor)
-                .frame(height: 1)
-        }
+        Rectangle()
+            .fill(gridLineColor)
+            .frame(height: 1)
         .allowsHitTesting(false)
     }
 
@@ -1930,14 +1938,7 @@ private struct WeeklyAvailabilityGrid: View {
         dayWidth: CGFloat,
         isCreating: Bool
     ) -> some View {
-        let displayMinuteWindow: AvailabilityMinuteWindow
-        if movingPreviewWindow?.id == minuteWindow.id {
-            displayMinuteWindow = movingPreviewWindow ?? minuteWindow
-        } else if resizingPreviewWindow?.id == minuteWindow.id {
-            displayMinuteWindow = resizingPreviewWindow ?? minuteWindow
-        } else {
-            displayMinuteWindow = minuteWindow
-        }
+        let displayMinuteWindow = displayMinuteWindow(for: minuteWindow)
         let labelWindow = availabilityWindow(for: labelMinuteWindow(for: displayMinuteWindow), on: date)
         let isActive = !isLocked && !isCreating && activeWindowID == window.id
         let windowHeight = max(minuteHeight(displayMinuteWindow.endMinute - displayMinuteWindow.startMinute), 28)
@@ -1947,9 +1948,6 @@ private struct WeeklyAvailabilityGrid: View {
             isActive: isActive,
             isLocked: isLocked,
             activeColor: activeColor,
-            onEdit: {
-                onEditWindow(window, date)
-            },
             moveGesture: moveGesture(for: minuteWindow, on: date),
             resizeStartGesture: resizeStartGesture(for: minuteWindow, on: date),
             resizeEndGesture: resizeEndGesture(for: minuteWindow, on: date)
@@ -1965,6 +1963,92 @@ private struct WeeklyAvailabilityGrid: View {
         }
         .allowsHitTesting(!isCreating)
         .zIndex(isActive ? 2 : isCreating ? 1.5 : 1)
+    }
+
+    private func displayMinuteWindow(for minuteWindow: AvailabilityMinuteWindow) -> AvailabilityMinuteWindow {
+        if movingPreviewWindow?.id == minuteWindow.id {
+            return movingPreviewWindow ?? minuteWindow
+        }
+
+        if resizingPreviewWindow?.id == minuteWindow.id {
+            return resizingPreviewWindow ?? minuteWindow
+        }
+
+        return minuteWindow
+    }
+
+    @ViewBuilder
+    private func activeEditButtonOverlay(
+        dayWidth: CGFloat,
+        height: CGFloat,
+        stripOffsetX: CGFloat
+    ) -> some View {
+        ZStack(alignment: .topLeading) {
+            if let placement = activeEditButtonPlacement(
+                dayWidth: dayWidth,
+                height: height,
+                stripOffsetX: stripOffsetX
+            ) {
+                Button {
+                    onEditWindow(placement.window, placement.date)
+                } label: {
+                    editButtonChrome
+                }
+                .buttonStyle(.plain)
+                .frame(width: editButtonSize, height: editButtonSize)
+                .position(x: placement.x, y: placement.y)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel("Edit Selected Slot")
+                .accessibilityIdentifier("Edit Availability Window")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func activeEditButtonPlacement(
+        dayWidth: CGFloat,
+        height: CGFloat,
+        stripOffsetX: CGFloat
+    ) -> AvailabilityEditButtonPlacement? {
+        guard let activeWindowID, !isLocked else { return nil }
+
+        for (dayIndex, date) in weekDates.enumerated() {
+            for window in appState.availabilityWindows(on: date, calendar: calendar) where window.id == activeWindowID {
+                let minuteWindow = minuteWindow(for: window, on: date)
+                let displayMinuteWindow = displayMinuteWindow(for: minuteWindow)
+                let x = timeLabelWidth
+                    + stripOffsetX
+                    + (CGFloat(dayIndex) * dayWidth)
+                    + slotLeadingInset
+                    + slotWidth(for: dayWidth)
+                let y = minuteY(displayMinuteWindow.startMinute)
+
+                guard y >= -editButtonSize,
+                      y <= height + editButtonSize else {
+                    return nil
+                }
+
+                return AvailabilityEditButtonPlacement(window: window, date: date, x: x, y: y)
+            }
+        }
+
+        return nil
+    }
+
+    private var editButtonChrome: some View {
+        Circle()
+            .fill(Color(.secondarySystemGroupedBackground))
+            .overlay {
+                Circle()
+                    .stroke(.black.opacity(0.18), lineWidth: 1)
+            }
+            .overlay {
+                Image(systemName: "pencil")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .frame(width: editButtonSize, height: editButtonSize)
+            .contentShape(Circle())
     }
 
     private func slotWidth(for dayWidth: CGFloat) -> CGFloat {
@@ -2786,7 +2870,6 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
     let isActive: Bool
     let isLocked: Bool
     let activeColor: Color
-    let onEdit: () -> Void
     let moveGesture: MoveGesture
     let resizeStartGesture: ResizeStartGesture
     let resizeEndGesture: ResizeEndGesture
@@ -2799,7 +2882,6 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
                     RoundedRectangle(cornerRadius: 5)
                         .stroke(activeColor, lineWidth: isActive ? 2 : 0)
                 )
-                .shadow(color: isActive ? .black.opacity(0.16) : .clear, radius: 3, y: 1)
                 .contentShape(Rectangle())
                 .gesture(moveGesture)
 
@@ -2808,8 +2890,8 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .foregroundStyle(.white)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 4)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 6)
 
             if isActive {
                 GeometryReader { proxy in
@@ -2840,30 +2922,6 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
                         .accessibilityIdentifier("Availability End Handle")
                         .zIndex(3)
 
-                    Circle()
-                        .fill(Color(.secondarySystemGroupedBackground))
-                        .overlay {
-                            Circle()
-                                .stroke(.black.opacity(0.18), lineWidth: 1)
-                        }
-                        .overlay {
-                            Image(systemName: "pencil")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(Color.accentColor)
-                        }
-                        .frame(width: 32, height: 32)
-                        .contentShape(Circle())
-                        .highPriorityGesture(
-                            TapGesture()
-                                .onEnded {
-                                    onEdit()
-                                }
-                        )
-                        .position(x: proxy.size.width, y: 0)
-                        .accessibilityAddTraits(.isButton)
-                        .accessibilityLabel("Edit Selected Slot")
-                        .accessibilityIdentifier("Edit Availability Window")
-                        .zIndex(4)
                 }
             }
         }
