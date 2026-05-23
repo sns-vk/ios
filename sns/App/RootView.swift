@@ -1384,7 +1384,8 @@ private struct WeeklyAvailabilityGrid: View {
     private let weekSelectorDayFont: Font = .system(size: 18, weight: .medium)
     private let topScrollInset: CGFloat = 28
     private let initialTopMinute = (16 * 60) + 30
-    private let slotHorizontalInset: CGFloat = 5
+    private let slotLeadingInset: CGFloat = 5
+    private let slotTrailingControlInset: CGFloat = 22
     private let bottomDragSlop: CGFloat = 28
     private let gridBottomPadding: CGFloat = 0
     private let slotControlOverflow: CGFloat = 22
@@ -1888,9 +1889,9 @@ private struct WeeklyAvailabilityGrid: View {
             resizeStartGesture: resizeStartGesture(for: minuteWindow, on: date),
             resizeEndGesture: resizeEndGesture(for: minuteWindow, on: date)
         )
-        .frame(width: max(dayWidth - (slotHorizontalInset * 2), 26), height: windowHeight)
+        .frame(width: slotWidth(for: dayWidth), height: windowHeight)
         .position(
-            x: (CGFloat(dayIndex) * dayWidth) + (dayWidth / 2),
+            x: (CGFloat(dayIndex) * dayWidth) + slotLeadingInset + (slotWidth(for: dayWidth) / 2),
             y: minuteY(displayMinuteWindow.startMinute) + (windowHeight / 2)
         )
         .onTapGesture {
@@ -1899,6 +1900,10 @@ private struct WeeklyAvailabilityGrid: View {
         }
         .allowsHitTesting(!isCreating)
         .zIndex(isActive ? 2 : isCreating ? 1.5 : 1)
+    }
+
+    private func slotWidth(for dayWidth: CGFloat) -> CGFloat {
+        max(dayWidth - slotLeadingInset - slotTrailingControlInset, 26)
     }
 
     private func animateDaySelection(to index: Int, dayWidth: CGFloat) {
