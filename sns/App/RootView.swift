@@ -1386,11 +1386,11 @@ private struct WeeklyAvailabilityGrid: View {
     private let initialTopMinute = (16 * 60) + 30
     private let slotHorizontalInset: CGFloat = 5
     private let bottomDragSlop: CGFloat = 28
-    private let gridBottomPadding: CGFloat = 12
-    private let trailingScrollHintWidth: CGFloat = 12
+    private let gridBottomPadding: CGFloat = 0
     private let slotControlOverflow: CGFloat = 22
     private let horizontalSnapDuration: TimeInterval = 0.22
     private let snapSettleDuration: TimeInterval = 0.18
+    private let horizontalRubberBandResistance: CGFloat = 0.55
     private let activeColor = Color.accentColor
     private let gridLineColor = Color(red: 0.88, green: 0.88, blue: 0.9)
     private let contentCoordinateSpace = "AvailabilityGridContent"
@@ -1444,7 +1444,7 @@ private struct WeeklyAvailabilityGrid: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let dayViewportWidth = geometry.size.width - timeLabelWidth - trailingScrollHintWidth
+            let dayViewportWidth = geometry.size.width - timeLabelWidth
             let dayWidth = max(dayViewportWidth / CGFloat(visibleDayCount), 96)
             let gridViewportHeight = max(visibleGridHeight - gridBottomPadding, 0)
             let stripOffsetX = horizontalStripOffset(dayWidth: dayWidth)
@@ -1466,7 +1466,6 @@ private struct WeeklyAvailabilityGrid: View {
 
                             ZStack(alignment: .topLeading) {
                                 gridLines(totalWidth: geometry.size.width, dayWidth: dayWidth)
-                                timeGutterSeparator(height: interactiveContentHeight, showsShadow: true)
                                 dayStrip(
                                     dayWidth: dayWidth,
                                     dayStripWidth: dayStripWidth,
@@ -1476,10 +1475,6 @@ private struct WeeklyAvailabilityGrid: View {
                                 .simultaneousGesture(horizontalDateDragGesture(dayWidth: dayWidth))
                                 .frame(width: dayViewportWidth + slotControlOverflow, height: interactiveContentHeight, alignment: .topLeading)
                                 .clipped()
-                                .background(alignment: .topLeading) {
-                                    viewportTrailingSeparator(height: interactiveContentHeight)
-                                        .offset(x: dayViewportWidth)
-                                }
                                 .offset(x: timeLabelWidth)
                             }
                             .frame(width: geometry.size.width, height: interactiveContentHeight, alignment: .topLeading)
@@ -1504,12 +1499,16 @@ private struct WeeklyAvailabilityGrid: View {
                     }
                     .frame(height: gridViewportHeight)
                     .background(alignment: .topLeading) {
-                        columnSeparators(dayWidth: dayWidth, height: gridViewportHeight, dayCount: weekDates.count)
-                            .frame(width: dayStripWidth, height: gridViewportHeight, alignment: .topLeading)
-                            .offset(x: stripOffsetX)
-                            .frame(width: dayViewportWidth, height: gridViewportHeight, alignment: .topLeading)
-                            .clipped()
-                            .offset(x: timeLabelWidth)
+                        ZStack(alignment: .topLeading) {
+                            timeGutterSeparator(height: gridViewportHeight, showsShadow: true)
+
+                            columnSeparators(dayWidth: dayWidth, height: gridViewportHeight, dayCount: weekDates.count)
+                                .frame(width: dayStripWidth, height: gridViewportHeight, alignment: .topLeading)
+                                .offset(x: stripOffsetX)
+                                .frame(width: dayViewportWidth, height: gridViewportHeight, alignment: .topLeading)
+                                .clipped()
+                                .offset(x: timeLabelWidth)
+                        }
                     }
                     .clipped()
                     .contentMargins(.all, 0, for: .scrollContent)
@@ -1521,6 +1520,11 @@ private struct WeeklyAvailabilityGrid: View {
 
                     Color.clear
                         .frame(height: gridBottomPadding)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color(.separator), lineWidth: 1)
                 }
             }
         }
@@ -1561,7 +1565,7 @@ private struct WeeklyAvailabilityGrid: View {
                             height: pillHeight
                         )
                         .offset(x: pillX, y: pillY)
-                        .animation(.easeInOut(duration: 0.2), value: selectorVisibleStartIndex)
+                        .animation(.easeOut(duration: horizontalSnapDuration), value: selectorVisibleStartIndex)
 
                     Circle()
                         .fill(Color.accentColor)
@@ -1570,14 +1574,13 @@ private struct WeeklyAvailabilityGrid: View {
                             x: circleX,
                             y: circleY
                         )
-                        .animation(.easeInOut(duration: 0.2), value: selectorVisibleStartIndex)
+                        .animation(.easeOut(duration: horizontalSnapDuration), value: selectorVisibleStartIndex)
                 }
 
                 HStack(spacing: 0) {
                     ForEach(Array(weekDates.enumerated()), id: \.element) { index, date in
                         Button {
-                            animateSelector(to: boundedVisibleStartIndex(index))
-                            onSelectVisibleStartIndex(index)
+                            animateDaySelection(to: index, dayWidth: dayWidth)
                         } label: {
                             VStack(spacing: 6) {
                                 Text(date.formatted(.dateTime.weekday(.abbreviated)))
@@ -1610,9 +1613,6 @@ private struct WeeklyAvailabilityGrid: View {
             }
         }
         .frame(height: weekSelectorHeight)
-        .overlay(alignment: .bottom) {
-            dayDividerLine()
-        }
     }
 
     private func selectedDateNumberOverlay(
@@ -1647,7 +1647,7 @@ private struct WeeklyAvailabilityGrid: View {
                     y: circleY
                 )
         }
-        .animation(.easeInOut(duration: 0.2), value: selectorVisibleStartIndex)
+        .animation(.easeOut(duration: horizontalSnapDuration), value: selectorVisibleStartIndex)
     }
 
     private func animateSelector(to index: Int) {
@@ -1675,12 +1675,6 @@ private struct WeeklyAvailabilityGrid: View {
             .offset(x: stripOffsetX)
             .frame(width: viewportWidth, height: headerHeight, alignment: .leading)
             .clipped()
-            .overlay(alignment: .trailing) {
-                viewportTrailingSeparator(height: headerHeight)
-            }
-
-            Color.clear
-                .frame(width: trailingScrollHintWidth)
         }
         .background(Color(.secondarySystemGroupedBackground))
         .overlay(alignment: .topLeading) {
@@ -1744,11 +1738,7 @@ private struct WeeklyAvailabilityGrid: View {
     private func timeGutterSeparator(height: CGFloat, showsShadow: Bool) -> some View {
         ZStack(alignment: .topLeading) {
             if showsShadow {
-                Rectangle()
-                    .fill(.black.opacity(0.08))
-                    .frame(width: 1, height: height)
-                    .blur(radius: 2)
-                    .offset(x: timeLabelWidth + 2)
+                timeGutterShadow(height: height)
             }
 
             Rectangle()
@@ -1759,10 +1749,12 @@ private struct WeeklyAvailabilityGrid: View {
         .allowsHitTesting(false)
     }
 
-    private func viewportTrailingSeparator(height: CGFloat) -> some View {
+    private func timeGutterShadow(height: CGFloat) -> some View {
         Rectangle()
-            .fill(gridLineColor)
+            .fill(.black.opacity(0.08))
             .frame(width: 1, height: height)
+            .blur(radius: 2)
+            .offset(x: timeLabelWidth + 2)
             .allowsHitTesting(false)
     }
 
@@ -1909,6 +1901,33 @@ private struct WeeklyAvailabilityGrid: View {
         .zIndex(isActive ? 2 : isCreating ? 1.5 : 1)
     }
 
+    private func animateDaySelection(to index: Int, dayWidth: CGFloat) {
+        pendingHorizontalSnap?.cancel()
+        pendingHorizontalSnap = nil
+
+        let targetStartIndex = boundedVisibleStartIndex(index)
+        let dayOffset = targetStartIndex - visibleStartIndex
+        guard dayOffset != 0 else {
+            withAnimation(.easeOut(duration: horizontalSnapDuration)) {
+                selectorVisibleStartIndex = targetStartIndex
+                horizontalDragOffset = 0
+            }
+            return
+        }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            horizontalDragOffset = CGFloat(dayOffset) * dayWidth
+            onSelectVisibleStartIndex(targetStartIndex)
+        }
+
+        withAnimation(.easeOut(duration: horizontalSnapDuration)) {
+            selectorVisibleStartIndex = targetStartIndex
+            horizontalDragOffset = 0
+        }
+    }
+
     private func horizontalDateDragGesture(dayWidth: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 28)
             .onChanged { value in
@@ -1964,15 +1983,31 @@ private struct WeeklyAvailabilityGrid: View {
 
     private func horizontalStripOffset(dayWidth: CGFloat) -> CGFloat {
         let baseOffset = -CGFloat(visibleStartIndex) * dayWidth
-        let proposedOffset = baseOffset + horizontalDragOffset
-        return min(max(proposedOffset, -CGFloat(maxVisibleStartIndex) * dayWidth), 0)
+        return baseOffset + horizontalDragOffset
     }
 
     private func boundedHorizontalDrag(_ translation: CGFloat, dayWidth: CGFloat) -> CGFloat {
         let baseOffset = -CGFloat(visibleStartIndex) * dayWidth
         let proposedOffset = baseOffset + translation
-        let boundedOffset = min(max(proposedOffset, -CGFloat(maxVisibleStartIndex) * dayWidth), 0)
-        return boundedOffset - baseOffset
+        let minOffset = -CGFloat(maxVisibleStartIndex) * dayWidth
+        let maxOffset: CGFloat = 0
+
+        if proposedOffset > maxOffset {
+            return maxOffset + rubberBandDistance(proposedOffset - maxOffset, dimension: dayWidth) - baseOffset
+        }
+
+        if proposedOffset < minOffset {
+            return minOffset - rubberBandDistance(minOffset - proposedOffset, dimension: dayWidth) - baseOffset
+        }
+
+        return translation
+    }
+
+    private func rubberBandDistance(_ distance: CGFloat, dimension: CGFloat) -> CGFloat {
+        let magnitude = abs(distance)
+        let resisted = (horizontalRubberBandResistance * magnitude * dimension)
+            / (dimension + (horizontalRubberBandResistance * magnitude))
+        return distance < 0 ? -resisted : resisted
     }
 
     private func boundedVisibleStartIndex(_ index: Int) -> Int {
