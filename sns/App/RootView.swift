@@ -1678,7 +1678,7 @@ private struct WeeklyAvailabilityGrid: View {
                             .offset(y: weekSelectorLabelOffsetY)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(AvailabilityNoPressFeedbackButtonStyle())
                         .accessibilityIdentifier("Availability Week Selector \(weekdayName(for: date))")
                     }
                 }
@@ -1994,7 +1994,7 @@ private struct WeeklyAvailabilityGrid: View {
                 } label: {
                     editButtonChrome
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(AvailabilityNoPressFeedbackButtonStyle())
                 .frame(width: editButtonSize, height: editButtonSize)
                 .position(x: placement.x, y: placement.y)
                 .accessibilityAddTraits(.isButton)
@@ -2560,6 +2560,12 @@ private struct WeeklyAvailabilityGrid: View {
 
     private func weekdayName(for date: Date) -> String {
         date.formatted(.dateTime.weekday(.wide))
+    }
+}
+
+private struct AvailabilityNoPressFeedbackButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }
 
