@@ -840,7 +840,6 @@ private struct WeeklyBatchAvailabilityView: View {
     let isEnrolledInBatch: Bool
     @Binding var visibleStartIndex: Int
     @Binding var topVisibleMinute: Int
-    @State private var viewMode: AvailabilityViewMode = .multiDay
     @State private var activeWindowID: AvailabilityWindow.ID?
     @State private var editingWindowContext: AvailabilityWindowEditContext?
 
@@ -854,27 +853,18 @@ private struct WeeklyBatchAvailabilityView: View {
                     }
 
                 VStack(alignment: .leading, spacing: 16) {
-                    switch viewMode {
-                    case .multiDay:
-                        WeeklyAvailabilityEditor(
-                            appState: appState,
-                            isLocked: isEnrolledInBatch,
-                            gridHeight: gridHeight(
-                                for: proxy.size.height,
-                                bottomSafeArea: proxy.safeAreaInsets.bottom
-                            ),
-                            activeWindowID: $activeWindowID,
-                            visibleStartIndex: $visibleStartIndex,
-                            topVisibleMinute: $topVisibleMinute,
-                            onEditWindow: editWindow
-                        )
-                    case .list:
-                        WeeklyAvailabilityListView(
-                            appState: appState,
-                            isLocked: isEnrolledInBatch,
-                            activeWindowID: $activeWindowID
-                        )
-                    }
+                    WeeklyAvailabilityEditor(
+                        appState: appState,
+                        isLocked: isEnrolledInBatch,
+                        gridHeight: gridHeight(
+                            for: proxy.size.height,
+                            bottomSafeArea: proxy.safeAreaInsets.bottom
+                        ),
+                        activeWindowID: $activeWindowID,
+                        visibleStartIndex: $visibleStartIndex,
+                        topVisibleMinute: $topVisibleMinute,
+                        onEditWindow: editWindow
+                    )
                 }
                 .padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -893,33 +883,6 @@ private struct WeeklyBatchAvailabilityView: View {
                         activeWindowID = nil
                     }
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 8) {
-                    Menu {
-                        Picker("View", selection: $viewMode) {
-                            ForEach(AvailabilityViewMode.allCases) { mode in
-                                Label(mode.label, systemImage: mode.systemImage)
-                                    .tag(mode)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: viewMode.systemImage)
-                            .frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel("Availability View")
-
-                    Button {
-                        addSlot()
-                    } label: {
-                        Image(systemName: "plus")
-                            .frame(width: 44, height: 44)
-                    }
-                    .disabled(isEnrolledInBatch)
-                    .accessibilityLabel("Add Slot")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.primary)
-            }
         }
         .sheet(item: $editingWindowContext) { context in
             AvailabilityWindowEditSheet(
@@ -927,28 +890,12 @@ private struct WeeklyBatchAvailabilityView: View {
                 context: context,
                 activeWindowID: $activeWindowID
             )
-            .presentationDetents([.height(320)])
+            .presentationDetents([.height(280)])
             .presentationDragIndicator(.visible)
         }
         .onDisappear {
             activeWindowID = nil
         }
-    }
-
-    private var activeWindowEditContext: AvailabilityWindowEditContext? {
-        guard let activeWindowID else { return nil }
-
-        let calendar = WeeklyAvailabilityCalendar.configuredCalendar()
-        for availabilityDay in appState.weeklyAvailability {
-            if let window = availabilityDay.windows.first(where: { $0.id == activeWindowID }) {
-                return AvailabilityWindowEditContext(
-                    date: calendar.startOfDay(for: availabilityDay.date),
-                    window: window
-                )
-            }
-        }
-
-        return nil
     }
 
     private func editWindow(_ window: AvailabilityWindow, on date: Date) {
@@ -959,77 +906,10 @@ private struct WeeklyBatchAvailabilityView: View {
         )
     }
 
-    private func addSlot() {
-        let calendar = WeeklyAvailabilityCalendar.configuredCalendar()
-        guard let date = activeWindowEditContext?.date ?? WeeklyAvailabilityCalendar.nextWeekDates(calendar: calendar).first else {
-            return
-        }
-
-        let existingWindows = appState.availabilityMinuteWindows(on: date, calendar: calendar)
-        guard let minuteWindow = defaultNewSlot(existingWindows: existingWindows) else {
-            return
-        }
-
-        let savedWindow = appState.upsertAvailabilityWindow(minuteWindow, on: date, calendar: calendar)
-        activeWindowID = savedWindow.id
-        editingWindowContext = AvailabilityWindowEditContext(
-            date: calendar.startOfDay(for: date),
-            window: savedWindow
-        )
-    }
-
-    private func defaultNewSlot(existingWindows: [AvailabilityMinuteWindow]) -> AvailabilityMinuteWindow? {
-        let duration = 60
-        let preferredStartMinute = (17 * 60)
-        let latestStartMinute = WeeklyAvailabilityGridRules.endMinute - duration
-        let candidateStarts = Array(stride(from: preferredStartMinute, through: latestStartMinute, by: 30))
-            + Array(stride(from: WeeklyAvailabilityGridRules.startMinute, to: preferredStartMinute, by: 30))
-
-        guard let startMinute = candidateStarts.first(where: { startMinute in
-            let endMinute = startMinute + duration
-            return !existingWindows.contains { startMinute < $0.endMinute && endMinute > $0.startMinute }
-        }) else {
-            return nil
-        }
-
-        return AvailabilityMinuteWindow(
-            id: UUID(),
-            startMinute: startMinute,
-            endMinute: startMinute + duration
-        )
-    }
-
     private func gridHeight(for containerHeight: CGFloat, bottomSafeArea: CGFloat) -> CGFloat {
         let tabBarClearance: CGFloat = 96
         let reservedHeight = 130 + max(bottomSafeArea, tabBarClearance)
         return min(max(containerHeight - reservedHeight, 360), 620)
-    }
-}
-
-private enum AvailabilityViewMode: String, CaseIterable, Identifiable {
-    case multiDay
-    case list
-
-    var id: Self {
-        self
-    }
-
-    var label: String {
-        switch self {
-        case .multiDay:
-            return "Multi Day"
-        case .list:
-            return "List"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .multiDay:
-            return "calendar.day.timeline.leading"
-        case .list:
-            return "list.bullet"
-        }
     }
 }
 
@@ -1050,6 +930,7 @@ private struct AvailabilityWindowEditSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var startTime: Date
     @State private var endTime: Date
+    @State private var isShowingOverlapResolution = false
 
     private var calendar: Calendar {
         WeeklyAvailabilityCalendar.configuredCalendar()
@@ -1063,10 +944,18 @@ private struct AvailabilityWindowEditSheet: View {
         snappedMinute(from: endTime, treatingMidnightAsEnd: true)
     }
 
-    private var overlapsExistingWindow: Bool {
+    private var overlappingWindows: [AvailabilityMinuteWindow] {
+        existingMinuteWindows
+            .filter { startMinute < $0.endMinute && endMinute > $0.startMinute }
+    }
+
+    private var existingMinuteWindows: [AvailabilityMinuteWindow] {
         appState.availabilityMinuteWindows(on: context.date, calendar: calendar)
             .filter { $0.id != context.id }
-            .contains { startMinute < $0.endMinute && endMinute > $0.startMinute }
+    }
+
+    private var overlapsExistingWindow: Bool {
+        !overlappingWindows.isEmpty
     }
 
     private var canSave: Bool {
@@ -1088,23 +977,54 @@ private struct AvailabilityWindowEditSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    CompactIntervalTimePickerRow(label: "Start", selection: $startTime)
-                    CompactIntervalTimePickerRow(label: "End", selection: $endTime)
-                }
+            VStack(spacing: 14) {
+                VStack(spacing: 0) {
+                    CompactIntervalTimePickerRow(
+                        label: "Start",
+                        selection: $startTime,
+                        minimumDate: startPickerMinimumDate,
+                        maximumDate: startPickerMaximumDate
+                    )
 
-                Section {
-                    Button(role: .destructive) {
-                        deleteWindow()
-                    } label: {
-                        Text("Delete Slot")
-                            .frame(maxWidth: .infinity)
-                    }
+                    Divider()
+                        .padding(.leading, 16)
+
+                    CompactIntervalTimePickerRow(
+                        label: "End",
+                        selection: $endTime,
+                        minimumDate: endPickerMinimumDate,
+                        maximumDate: endPickerMaximumDate
+                    )
                 }
+                .padding(.horizontal, 16)
+                .editSheetGlassBackground(cornerRadius: 24)
+
+                Button(role: .destructive) {
+                    deleteWindow()
+                } label: {
+                    Text("Delete Slot")
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                }
+                .buttonStyle(.plain)
+                .editSheetGlassBackground(cornerRadius: 22)
+
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
             .navigationTitle("Edit Slot")
             .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                if overlapsExistingWindow {
+                    overlapWarningButton
+                        .zIndex(1)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+                        .padding(.bottom, 12)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -1119,7 +1039,125 @@ private struct AvailabilityWindowEditSheet: View {
                     .disabled(!canSave)
                 }
             }
+            .onChange(of: overlapsExistingWindow) { _, hasOverlap in
+                if !hasOverlap {
+                    isShowingOverlapResolution = false
+                }
+            }
         }
+    }
+
+    private var overlapWarningButton: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.18)) {
+                isShowingOverlapResolution.toggle()
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+
+                Text("This time overlaps with another slot.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Image(systemName: "chevron.up")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(isShowingOverlapResolution ? 180 : 0))
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 44)
+            .editSheetGlassBackground(cornerRadius: 22)
+        }
+        .buttonStyle(.plain)
+        .overlay(alignment: .top) {
+            if isShowingOverlapResolution {
+                overlapResolutionPopover
+                    .offset(y: -152)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottom)))
+            }
+        }
+    }
+
+    private var overlapResolutionPopover: some View {
+        VStack(spacing: 0) {
+            Button("Merge Slots") {
+                mergeOverlappingSlots()
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+
+            Divider()
+
+            Button(role: .destructive) {
+                deleteOverlappingSlots()
+            } label: {
+                Text(deleteOverlappingSlotsLabel)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+
+            Divider()
+
+            Button("Go Back") {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    goBackToOriginalTime()
+                    isShowingOverlapResolution = false
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.plain)
+        .editSheetGlassBackground(cornerRadius: 20)
+    }
+
+    private var deleteOverlappingSlotsLabel: String {
+        overlappingWindows.count == 1 ? "Delete the Overlapping Slot" : "Delete the Overlapping Slots"
+    }
+
+    private var startPickerMinimumDate: Date {
+        date(for: startPickerMinuteRange.lowerBound)
+    }
+
+    private var startPickerMaximumDate: Date {
+        date(for: startPickerMinuteRange.upperBound)
+    }
+
+    private var endPickerMinimumDate: Date {
+        date(for: endPickerMinuteRange.lowerBound)
+    }
+
+    private var endPickerMaximumDate: Date {
+        date(for: endPickerMinuteRange.upperBound)
+    }
+
+    private var startPickerMinuteRange: ClosedRange<Int> {
+        let previousBlockingEndMinute = existingMinuteWindows
+            .filter { $0.startMinute < endMinute }
+            .map(\.endMinute)
+            .max() ?? WeeklyAvailabilityGridRules.startMinute
+        let lowerBound = max(WeeklyAvailabilityGridRules.startMinute, previousBlockingEndMinute)
+        let upperBound = min(
+            endMinute - WeeklyAvailabilityGridRules.minimumDurationMinutes,
+            WeeklyAvailabilityGridRules.endMinute - WeeklyAvailabilityGridRules.minimumDurationMinutes
+        )
+
+        return normalizedMinuteRange(lowerBound: lowerBound, upperBound: upperBound)
+    }
+
+    private var endPickerMinuteRange: ClosedRange<Int> {
+        let nextBlockingStartMinute = existingMinuteWindows
+            .filter { $0.endMinute > startMinute }
+            .map(\.startMinute)
+            .min() ?? WeeklyAvailabilityGridRules.endMinute
+        let lowerBound = max(
+            WeeklyAvailabilityGridRules.startMinute + WeeklyAvailabilityGridRules.minimumDurationMinutes,
+            startMinute + WeeklyAvailabilityGridRules.minimumDurationMinutes
+        )
+        let upperBound = min(WeeklyAvailabilityGridRules.endMinute, nextBlockingStartMinute)
+
+        return normalizedMinuteRange(lowerBound: lowerBound, upperBound: upperBound)
     }
 
     private func saveWindow() {
@@ -1133,10 +1171,83 @@ private struct AvailabilityWindowEditSheet: View {
         dismiss()
     }
 
+    private func mergeOverlappingSlots() {
+        let mergedWindow = mergedWindowIncludingOverlaps()
+        for window in mergedWindow.overlappingWindows {
+            appState.removeAvailabilityWindow(window.id, on: context.date, calendar: calendar)
+        }
+
+        let savedWindow = appState.upsertAvailabilityWindow(
+            AvailabilityMinuteWindow(
+                id: context.id,
+                startMinute: mergedWindow.startMinute,
+                endMinute: mergedWindow.endMinute
+            ),
+            on: context.date,
+            calendar: calendar
+        )
+        activeWindowID = savedWindow.id
+        dismiss()
+    }
+
+    private func deleteOverlappingSlots() {
+        for window in overlappingWindows {
+            appState.removeAvailabilityWindow(window.id, on: context.date, calendar: calendar)
+        }
+        saveWindow()
+    }
+
+    private func goBackToOriginalTime() {
+        startTime = context.window.startTime
+        endTime = context.window.endTime
+    }
+
+    private func mergedWindowIncludingOverlaps() -> (
+        startMinute: Int,
+        endMinute: Int,
+        overlappingWindows: [AvailabilityMinuteWindow]
+    ) {
+        var mergedStartMinute = startMinute
+        var mergedEndMinute = endMinute
+        var mergedOverlappingWindows: [AvailabilityMinuteWindow] = []
+        var mergedOverlappingWindowIDs = Set<AvailabilityMinuteWindow.ID>()
+
+        var didAddOverlap = true
+        while didAddOverlap {
+            didAddOverlap = false
+            let candidates = appState.availabilityMinuteWindows(on: context.date, calendar: calendar)
+                .filter { $0.id != context.id }
+
+            for window in candidates where mergedStartMinute < window.endMinute && mergedEndMinute > window.startMinute {
+                if mergedOverlappingWindowIDs.insert(window.id).inserted {
+                    mergedOverlappingWindows.append(window)
+                    mergedStartMinute = min(mergedStartMinute, window.startMinute)
+                    mergedEndMinute = max(mergedEndMinute, window.endMinute)
+                    didAddOverlap = true
+                }
+            }
+        }
+
+        return (mergedStartMinute, mergedEndMinute, mergedOverlappingWindows)
+    }
+
     private func deleteWindow() {
         appState.removeAvailabilityWindow(context.id, on: context.date, calendar: calendar)
         activeWindowID = nil
         dismiss()
+    }
+
+    private func normalizedMinuteRange(lowerBound: Int, upperBound: Int) -> ClosedRange<Int> {
+        if lowerBound <= upperBound {
+            return lowerBound...upperBound
+        }
+
+        return lowerBound...lowerBound
+    }
+
+    private func date(for minute: Int) -> Date {
+        let day = calendar.startOfDay(for: context.date)
+        return WeeklyAvailabilityCalendar.date(on: day, minuteOfDay: minute, calendar: calendar)
     }
 
     private func snappedMinute(from date: Date, treatingMidnightAsEnd: Bool = false) -> Int {
@@ -1150,9 +1261,37 @@ private struct AvailabilityWindowEditSheet: View {
     }
 }
 
+private struct EditSheetGlassBackgroundModifier: ViewModifier {
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(Color.gray.opacity(0.12))
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .stroke(Color.white.opacity(0.42), lineWidth: 1)
+                    }
+            }
+    }
+}
+
+private extension View {
+    func editSheetGlassBackground(cornerRadius: CGFloat) -> some View {
+        modifier(EditSheetGlassBackgroundModifier(cornerRadius: cornerRadius))
+    }
+}
+
 private struct CompactIntervalTimePickerRow: View {
     let label: String
     @Binding var selection: Date
+    let minimumDate: Date
+    let maximumDate: Date
 
     var body: some View {
         HStack {
@@ -1162,18 +1301,22 @@ private struct CompactIntervalTimePickerRow: View {
 
             CompactIntervalTimePicker(
                 selection: $selection,
-                minuteInterval: WeeklyAvailabilityGridRules.snapIntervalMinutes
+                minuteInterval: WeeklyAvailabilityGridRules.snapIntervalMinutes,
+                minimumDate: minimumDate,
+                maximumDate: maximumDate
             )
             .frame(height: 36)
             .accessibilityLabel(label)
         }
-        .frame(minHeight: 44)
+        .frame(height: 64)
     }
 }
 
 private struct CompactIntervalTimePicker: UIViewRepresentable {
     @Binding var selection: Date
     let minuteInterval: Int
+    let minimumDate: Date
+    let maximumDate: Date
 
     func makeUIView(context: Context) -> UIDatePicker {
         let picker = UIDatePicker()
@@ -1192,9 +1335,18 @@ private struct CompactIntervalTimePicker: UIViewRepresentable {
 
     func updateUIView(_ picker: UIDatePicker, context: Context) {
         picker.minuteInterval = minuteInterval
+        picker.minimumDate = minimumDate
+        picker.maximumDate = maximumDate
 
-        if picker.date != selection {
-            picker.date = selection
+        let clampedSelection = min(max(selection, minimumDate), maximumDate)
+        if picker.date != clampedSelection {
+            picker.date = clampedSelection
+        }
+
+        if selection != clampedSelection {
+            DispatchQueue.main.async {
+                selection = clampedSelection
+            }
         }
     }
 
@@ -1212,102 +1364,6 @@ private struct CompactIntervalTimePicker: UIViewRepresentable {
         @objc func dateChanged(_ picker: UIDatePicker) {
             selection = picker.date
         }
-    }
-}
-
-private struct WeeklyAvailabilityListView: View {
-    @Bindable var appState: AppState
-    let isLocked: Bool
-    @Binding var activeWindowID: AvailabilityWindow.ID?
-
-    private var calendar: Calendar {
-        WeeklyAvailabilityCalendar.configuredCalendar()
-    }
-
-    private var weekDates: [Date] {
-        WeeklyAvailabilityCalendar.nextWeekDates(calendar: calendar)
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                ForEach(weekDates, id: \.self) { date in
-                    let windows = appState.availabilityWindows(on: date, calendar: calendar)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(dayTitle(for: date))
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
-
-                        VStack(spacing: 0) {
-                            if windows.isEmpty {
-                                Text("No slots")
-                                    .font(.body)
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 14)
-                            } else {
-                                ForEach(windows) { window in
-                                    AvailabilitySlotListRow(
-                                        window: window,
-                                        isActive: activeWindowID == window.id
-                                    )
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        guard !isLocked else { return }
-                                        activeWindowID = window.id
-                                    }
-
-                                    if window.id != windows.last?.id {
-                                        Divider()
-                                            .padding(.leading, 16)
-                                    }
-                                }
-                            }
-                        }
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    }
-                }
-            }
-            .padding(.bottom, 96)
-        }
-        .scrollIndicators(.hidden)
-        .accessibilityIdentifier("Availability List")
-    }
-
-    private func dayTitle(for date: Date) -> String {
-        "\(date.formatted(.dateTime.weekday(.wide))) – \(date.formatted(.dateTime.month(.abbreviated).day()))"
-    }
-}
-
-private struct AvailabilitySlotListRow: View {
-    let window: AvailabilityWindow
-    let isActive: Bool
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "clock")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .frame(width: 24)
-
-            Text("\(window.startTime.formatted(date: .omitted, time: .shortened))–\(window.endTime.formatted(date: .omitted, time: .shortened))")
-                .font(.body)
-
-            Spacer()
-
-            if isActive {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.body)
-                    .foregroundStyle(.tint)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(isActive ? Color.accentColor.opacity(0.08) : Color.clear)
     }
 }
 
