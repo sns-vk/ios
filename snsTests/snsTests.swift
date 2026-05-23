@@ -400,7 +400,7 @@ struct snsTests {
         )
 
         #expect(window?.startMinute == 7 * 60)
-        #expect(window?.endMinute == 7 * 60 + 15)
+        #expect(window?.endMinute == 7 * 60 + 30)
     }
 
     @Test func weeklyAvailabilityGridClampsToFullDay() {
@@ -416,8 +416,8 @@ struct snsTests {
         )
 
         #expect(startWindow?.startMinute == 0)
-        #expect(startWindow?.endMinute == 15)
-        #expect(endWindow?.startMinute == 23 * 60 + 45)
+        #expect(startWindow?.endMinute == 30)
+        #expect(endWindow?.startMinute == 23 * 60 + 30)
         #expect(endWindow?.endMinute == 24 * 60)
     }
 

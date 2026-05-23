@@ -1344,6 +1344,11 @@ private struct WeeklyAvailabilityEditor: View {
     }
 }
 
+private enum AvailabilityCreationDirection {
+    case upward
+    case downward
+}
+
 private struct WeeklyAvailabilityGrid: View {
     @Bindable var appState: AppState
     let isLocked: Bool
@@ -1365,6 +1370,7 @@ private struct WeeklyAvailabilityGrid: View {
     @State private var creatingWindowID: AvailabilityWindow.ID?
     @State private var creatingDate: Date?
     @State private var creatingPreviewWindow: AvailabilityMinuteWindow?
+    @State private var creatingDirection: AvailabilityCreationDirection?
     @State private var scrollOffsetY: CGFloat = 0
     @State private var horizontalDragOffset: CGFloat = 0
     @State private var selectorVisibleStartIndex: Int
@@ -1382,6 +1388,7 @@ private struct WeeklyAvailabilityGrid: View {
     private let bottomDragSlop: CGFloat = 28
     private let gridBottomPadding: CGFloat = 12
     private let trailingScrollHintWidth: CGFloat = 12
+    private let slotControlOverflow: CGFloat = 22
     private let horizontalSnapDuration: TimeInterval = 0.22
     private let snapSettleDuration: TimeInterval = 0.18
     private let activeColor = Color.accentColor
@@ -1467,10 +1474,11 @@ private struct WeeklyAvailabilityGrid: View {
                                     stripOffsetX: stripOffsetX
                                 )
                                 .simultaneousGesture(horizontalDateDragGesture(dayWidth: dayWidth))
-                                .frame(width: dayViewportWidth, height: interactiveContentHeight, alignment: .topLeading)
+                                .frame(width: dayViewportWidth + slotControlOverflow, height: interactiveContentHeight, alignment: .topLeading)
                                 .clipped()
-                                .overlay(alignment: .trailing) {
+                                .background(alignment: .topLeading) {
                                     viewportTrailingSeparator(height: interactiveContentHeight)
+                                        .offset(x: dayViewportWidth)
                                 }
                                 .offset(x: timeLabelWidth)
                             }
@@ -1786,14 +1794,25 @@ private struct WeeklyAvailabilityGrid: View {
                 onChanged: { date, id, anchorY, currentY in
                     if creatingWindowID != id {
                         activeWindowID = nil
+                        creatingDirection = nil
                     }
+                    let nextDirection = creationDirection(
+                        anchorContentY: anchorY,
+                        currentContentY: currentY
+                    )
+                    let direction = creatingDirection ?? nextDirection ?? .downward
+
                     creatingWindowID = id
                     creatingDate = date
+                    if let nextDirection {
+                        creatingDirection = nextDirection
+                    }
                     creatingPreviewWindow = previewCreatingWindow(
                         id: id,
                         on: date,
                         anchorContentY: anchorY,
-                        currentContentY: currentY
+                        currentContentY: currentY,
+                        direction: direction
                     )
                 },
                 onEnded: {
@@ -1886,6 +1905,7 @@ private struct WeeklyAvailabilityGrid: View {
             guard !isLocked else { return }
             activeWindowID = window.id
         }
+        .allowsHitTesting(!isCreating)
         .zIndex(isActive ? 2 : isCreating ? 1.5 : 1)
     }
 
@@ -2073,7 +2093,8 @@ private struct WeeklyAvailabilityGrid: View {
         id: UUID,
         on date: Date,
         anchorContentY: CGFloat,
-        currentContentY: CGFloat
+        currentContentY: CGFloat,
+        direction: AvailabilityCreationDirection
     ) -> AvailabilityMinuteWindow? {
         let existingWindows = appState
             .availabilityMinuteWindows(on: date, calendar: calendar)
@@ -2081,47 +2102,57 @@ private struct WeeklyAvailabilityGrid: View {
 
         let anchorRawMinute = rawMinute(forContentY: anchorContentY)
         let anchorStartMinute = floorSnappedMinute(anchorRawMinute)
-        let anchorEndMinute = ceilingSnappedMinute(anchorRawMinute)
         let current = rawMinute(forContentY: currentContentY)
         let sortedWindows = existingWindows.sorted { $0.startMinute < $1.startMinute }
+        let nextStart = sortedWindows
+            .filter { $0.startMinute >= anchorStartMinute }
+            .map(\.startMinute)
+            .min() ?? WeeklyAvailabilityGridRules.endMinute
 
-        if current >= anchorRawMinute {
-            let nextStart = sortedWindows
-                .filter { $0.startMinute >= anchorStartMinute }
-                .map(\.startMinute)
-                .min() ?? WeeklyAvailabilityGridRules.endMinute
+        if direction == .downward {
             let end = min(max(current, anchorStartMinute + WeeklyAvailabilityGridRules.minimumDurationMinutes), nextStart)
             guard end - anchorStartMinute >= WeeklyAvailabilityGridRules.minimumDurationMinutes else { return nil }
             return AvailabilityMinuteWindow(id: id, startMinute: anchorStartMinute, endMinute: end)
         }
 
+        let anchoredEndMinute = min(anchorStartMinute + WeeklyAvailabilityGridRules.minimumDurationMinutes, nextStart)
         let previousEnd = sortedWindows
-            .filter { $0.endMinute <= anchorEndMinute }
+            .filter { $0.endMinute <= anchoredEndMinute }
             .map(\.endMinute)
             .max() ?? WeeklyAvailabilityGridRules.startMinute
-        let start = max(min(current, anchorEndMinute - WeeklyAvailabilityGridRules.minimumDurationMinutes), previousEnd)
-        guard anchorEndMinute - start >= WeeklyAvailabilityGridRules.minimumDurationMinutes else { return nil }
-        return AvailabilityMinuteWindow(id: id, startMinute: start, endMinute: anchorEndMinute)
+        let start = max(min(current, anchoredEndMinute - WeeklyAvailabilityGridRules.minimumDurationMinutes), previousEnd)
+        guard anchoredEndMinute - start >= WeeklyAvailabilityGridRules.minimumDurationMinutes else { return nil }
+        return AvailabilityMinuteWindow(id: id, startMinute: start, endMinute: anchoredEndMinute)
+    }
+
+    private func creationDirection(anchorContentY: CGFloat, currentContentY: CGFloat) -> AvailabilityCreationDirection? {
+        let deltaY = currentContentY - anchorContentY
+        guard abs(deltaY) >= 1 else { return nil }
+        return deltaY < 0 ? .upward : .downward
     }
 
     private func commitCreatingWindow(_ previewWindow: AvailabilityMinuteWindow, on date: Date) -> AvailabilityWindow? {
-        guard let minuteWindow = WeeklyAvailabilityGridRules.createWindowMinutes(
-            anchorMinute: previewWindow.startMinute,
-            currentMinute: previewWindow.endMinute,
-            existingWindows: appState.availabilityMinuteWindows(on: date, calendar: calendar)
-        ) else {
+        let minuteWindow = AvailabilityMinuteWindow(
+            id: previewWindow.id,
+            startMinute: snappedMinute(previewWindow.startMinute),
+            endMinute: snappedMinute(previewWindow.endMinute)
+        )
+        guard minuteWindow.endMinute - minuteWindow.startMinute >= WeeklyAvailabilityGridRules.minimumDurationMinutes,
+              canCommitCreatedWindow(minuteWindow, on: date) else {
             return nil
         }
 
-        return appState.upsertAvailabilityWindow(
-            AvailabilityMinuteWindow(
-                id: previewWindow.id,
-                startMinute: minuteWindow.startMinute,
-                endMinute: minuteWindow.endMinute
-            ),
-            on: date,
-            calendar: calendar
-        )
+        return appState.upsertAvailabilityWindow(minuteWindow, on: date, calendar: calendar)
+    }
+
+    private func canCommitCreatedWindow(_ minuteWindow: AvailabilityMinuteWindow, on date: Date) -> Bool {
+        appState
+            .availabilityMinuteWindows(on: date, calendar: calendar)
+            .filter { $0.id != minuteWindow.id }
+            .allSatisfy { existingWindow in
+                minuteWindow.endMinute <= existingWindow.startMinute
+                    || minuteWindow.startMinute >= existingWindow.endMinute
+            }
     }
 
     private func finishCreatingWindow(_ previewWindow: AvailabilityMinuteWindow, on date: Date) {
@@ -2147,6 +2178,7 @@ private struct WeeklyAvailabilityGrid: View {
         creatingWindowID = nil
         creatingDate = nil
         creatingPreviewWindow = nil
+        creatingDirection = nil
     }
 
     private func updateMovedWindow(_ originalWindow: AvailabilityMinuteWindow, on date: Date, targetStartContentY: CGFloat) {
@@ -2537,7 +2569,7 @@ private struct AvailabilityCreationGestureOverlay: UIViewRepresentable {
                 activeID = id
                 activeDate = date
                 anchorY = startLocation.y
-                parent.onChanged(date, id, startLocation.y, location.y)
+                parent.onChanged(date, id, startLocation.y, startLocation.y)
             case .changed:
                 guard let id = activeID, let date = activeDate, let anchorY else { return }
                 parent.onChanged(date, id, anchorY, location.y)
@@ -2680,10 +2712,10 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
                     let handleHeight: CGFloat = 10
 
                     Capsule()
-                        .fill(.ultraThinMaterial)
+                        .fill(Color(.secondarySystemGroupedBackground))
                         .overlay {
                             Capsule()
-                                .stroke(.white.opacity(0.7), lineWidth: 1)
+                                .stroke(.black.opacity(0.18), lineWidth: 1)
                         }
                         .frame(width: handleWidth, height: handleHeight)
                         .position(x: proxy.size.width / 2, y: 0)
@@ -2692,10 +2724,10 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
                         .zIndex(3)
 
                     Capsule()
-                        .fill(.ultraThinMaterial)
+                        .fill(Color(.secondarySystemGroupedBackground))
                         .overlay {
                             Capsule()
-                                .stroke(.white.opacity(0.7), lineWidth: 1)
+                                .stroke(.black.opacity(0.18), lineWidth: 1)
                         }
                         .frame(width: handleWidth, height: handleHeight)
                         .position(x: proxy.size.width / 2, y: proxy.size.height)
@@ -2703,18 +2735,26 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
                         .accessibilityIdentifier("Availability End Handle")
                         .zIndex(3)
 
-                    Image(systemName: "pencil")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .contentShape(Rectangle())
+                    Circle()
+                        .fill(Color(.secondarySystemGroupedBackground))
+                        .overlay {
+                            Circle()
+                                .stroke(.black.opacity(0.18), lineWidth: 1)
+                        }
+                        .overlay {
+                            Image(systemName: "pencil")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(Color.accentColor)
+                        }
+                        .frame(width: 32, height: 32)
+                        .contentShape(Circle())
                         .highPriorityGesture(
                             TapGesture()
                                 .onEnded {
                                     onEdit()
                                 }
                         )
-                        .position(x: proxy.size.width - 12, y: 12)
+                        .position(x: proxy.size.width, y: 0)
                         .accessibilityAddTraits(.isButton)
                         .accessibilityLabel("Edit Selected Slot")
                         .accessibilityIdentifier("Edit Availability Window")

@@ -246,7 +246,7 @@ enum WeeklyAvailabilityGridRules {
     static let startMinute = 0
     static let endMinute = 24 * 60
     static let snapIntervalMinutes = 15
-    static let minimumDurationMinutes = 15
+    static let minimumDurationMinutes = 30
 
     static func snap(_ minute: Int) -> Int {
         let snapped = Int((Double(minute) / Double(snapIntervalMinutes)).rounded()) * snapIntervalMinutes
