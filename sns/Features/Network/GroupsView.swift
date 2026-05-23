@@ -13,6 +13,7 @@ struct GroupsView: View {
     @State private var isSettlingDrag = false
     @State private var groupRowFrames: [AppGroup.ID: CGRect] = [:]
     @State private var groupPlaceholderFrame: CGRect?
+    @GestureState private var armedDragID: AppGroup.ID?
     @Namespace private var groupReorderNamespace
 
     private let groupSpacing: CGFloat = 14
@@ -42,6 +43,13 @@ struct GroupsView: View {
 
                         case .group(let group):
                             GroupCard(group: group)
+                                .scaleEffect(armedDragID == group.id && activeDragID == nil ? 1.025 : 1)
+                                .shadow(
+                                    color: Color.black.opacity(armedDragID == group.id && activeDragID == nil ? 0.18 : 0),
+                                    radius: armedDragID == group.id && activeDragID == nil ? 16 : 0,
+                                    x: 0,
+                                    y: armedDragID == group.id && activeDragID == nil ? 8 : 0
+                                )
                                 .matchedGeometryEffect(id: group.id, in: groupReorderNamespace)
                                 .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                                 .background {
@@ -57,6 +65,7 @@ struct GroupsView: View {
                                     selectedGroupID = group.id
                                 }
                                 .highPriorityGesture(reorderGesture(for: group.id))
+                                .animation(dragActivationAnimation, value: armedDragID == group.id)
                                 .animation(reorderAnimation, value: activeDragID)
                                 .animation(reorderAnimation, value: pendingDropIndex)
                                 .zIndex(1)
@@ -73,8 +82,13 @@ struct GroupsView: View {
                 GroupCard(group: activeGroup)
                     .frame(width: activeDragStartFrame.width)
                     .matchedGeometryEffect(id: activeDragID, in: groupReorderNamespace)
-                    .scaleEffect(1.025)
-                    .shadow(color: Color.black.opacity(0.18), radius: 16, x: 0, y: 8)
+                    .scaleEffect(isSettlingDrag ? 1 : 1.025)
+                    .shadow(
+                        color: Color.black.opacity(isSettlingDrag ? 0 : 0.18),
+                        radius: isSettlingDrag ? 0 : 16,
+                        x: 0,
+                        y: isSettlingDrag ? 0 : 8
+                    )
                     .offset(
                         x: activeDragStartFrame.minX + activeDragOffset.width,
                         y: activeDragStartFrame.minY + activeDragOffset.height
@@ -137,24 +151,36 @@ struct GroupsView: View {
 
     private func reorderGesture(for groupID: AppGroup.ID) -> some Gesture {
         LongPressGesture(minimumDuration: 0.28)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("groups-list")))
-            .onChanged { value in
-                guard !isSettlingDrag else { return }
+            .sequenced(before: DragGesture(minimumDistance: 6, coordinateSpace: .named("groups-list")))
+            .updating($armedDragID) { value, state, transaction in
+                transaction.animation = dragActivationAnimation
 
                 switch value {
                 case .first(true):
-                    activateDrag(for: groupID)
-                case .second(true, let drag):
-                    activateDrag(for: groupID)
-                    activeDragOffset = drag?.translation ?? .zero
-                    if let drag {
-                        updateDropIndex(for: groupID, translation: drag.translation)
+                    state = groupID
+                case .second(true, _):
+                    if activeDragID == nil {
+                        state = groupID
                     }
                 default:
                     break
                 }
             }
+            .onChanged { value in
+                guard !isSettlingDrag else { return }
+
+                switch value {
+                case .second(true, let drag?):
+                    activateDrag(for: groupID)
+                    activeDragOffset = drag.translation
+                    updateDropIndex(for: groupID, translation: drag.translation)
+                default:
+                    break
+                }
+            }
             .onEnded { value in
+                guard !isSettlingDrag else { return }
+
                 guard activeDragID == groupID else {
                     resetDrag()
                     return
@@ -202,8 +228,8 @@ struct GroupsView: View {
             return
         }
 
-        isSettlingDrag = true
         withAnimation(releaseAnimation) {
+            isSettlingDrag = true
             activeDragOffset = settleOffset
         }
 
@@ -370,10 +396,7 @@ private struct GroupCard: View {
 private struct GroupPlaceholderCard: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .strokeBorder(
-                Color.secondary,
-                style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [7, 7])
-            )
+            .fill(Color.gray.opacity(0.12))
             .frame(height: 84)
     }
 }
