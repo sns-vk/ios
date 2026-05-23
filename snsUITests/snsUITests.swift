@@ -52,7 +52,6 @@ final class snsUITests: XCTestCase {
         XCTAssertFalse(app.buttons["My Card Row"].exists)
         XCTAssertTrue(app.buttons["Contacts Row"].exists)
         XCTAssertTrue(app.buttons["Groups Row"].exists)
-        XCTAssertFalse(app.buttons["Logbook Row"].exists)
 
         app.tabBars.buttons["Profile"].tap()
 
@@ -60,8 +59,6 @@ final class snsUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Substance Use"].exists)
         XCTAssertTrue(app.buttons["My Card Row"].exists)
         XCTAssertTrue(app.buttons["Account Gender Row"].exists)
-        scrollToElement(app.buttons["Logbook Row"], in: app)
-        XCTAssertTrue(app.buttons["Logbook Row"].exists)
         XCTAssertFalse(app.staticTexts["Match Criteria"].exists)
         XCTAssertFalse(app.buttons["Criteria Drinking Substance Use Row"].exists)
     }
@@ -710,20 +707,6 @@ final class snsUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Groups"].waitForExistence(timeout: 2))
         app.buttons["Group Priority Info"].tap()
         XCTAssertTrue(app.staticTexts["Higher-priority groups are favored more when a match is connected through that group."].waitForExistence(timeout: 2))
-    }
-
-    @MainActor
-    func testLogbookOpensFromRoot() throws {
-        let app = XCUIApplication()
-        app.launch()
-
-        app.tabBars.buttons["Profile"].tap()
-
-        scrollToElement(app.buttons["Logbook Row"], in: app)
-        app.buttons["Logbook Row"].tap()
-
-        XCTAssertTrue(app.navigationBars["Logbook"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.staticTexts["Enrolled in this week's batch"].exists)
     }
 
     @MainActor

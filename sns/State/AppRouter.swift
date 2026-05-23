@@ -99,7 +99,6 @@ enum RootTab: String, CaseIterable, Identifiable {
 enum RootSearchPage: String, CaseIterable, Identifiable {
     case contacts
     case groups
-    case logbook
     case location
     case radius
     case matchWith
@@ -115,7 +114,6 @@ enum RootSearchPage: String, CaseIterable, Identifiable {
         switch self {
         case .contacts: "Contacts"
         case .groups: "Groups"
-        case .logbook: "Logbook"
         case .location: "Location"
         case .radius: "Maximum Radius"
         case .matchWith: "Gender"
@@ -131,7 +129,6 @@ enum RootSearchPage: String, CaseIterable, Identifiable {
         switch self {
         case .contacts: "person.2.fill"
         case .groups: "venn.diagram.fill"
-        case .logbook: "checklist"
         case .location: "location.fill"
         case .radius: "scope"
         case .matchWith: "person.fill"
@@ -147,7 +144,6 @@ enum RootSearchPage: String, CaseIterable, Identifiable {
         switch self {
         case .contacts: ["people", "person", "friends", "network"]
         case .groups: ["group", "priority", "mutuals", "referral"]
-        case .logbook: ["history", "activity", "events"]
         case .location: ["city", "place", "area"]
         case .radius: ["distance", "range", "nearby", "miles"]
         case .matchWith: ["preferences", "criteria", "match", "gender"]

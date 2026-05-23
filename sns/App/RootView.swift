@@ -140,8 +140,6 @@ struct RootView: View {
         }
 
         networkSection
-
-        historySection
     }
 
     @ViewBuilder
@@ -264,15 +262,6 @@ struct RootView: View {
         }
     }
 
-    private var historySection: some View {
-        Section("History") {
-            NavigationLink(value: RootDestination.page(.logbook)) {
-                valueRow(title: "Logbook", value: "\(MockData.logbookItems.count) events", systemImage: "checklist")
-            }
-            .accessibilityIdentifier("Logbook Row")
-        }
-    }
-
     private func valueRow(title: String, value: String, systemImage: String) -> some View {
         HStack(spacing: 12) {
             rowIcon(systemImage)
@@ -361,8 +350,6 @@ struct RootView: View {
         case .groups:
             GroupsView(groups: $appState.groups, allContacts: appState.contacts)
                 .navigationTitle("Groups")
-        case .logbook:
-            LogbookView(items: MockData.logbookItems)
         case .location:
             MatchingLocationView(location: $appState.matchingLocation)
         case .radius:
