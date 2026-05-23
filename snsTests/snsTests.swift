@@ -554,6 +554,15 @@ struct snsTests {
         #expect(contactsResults.pages == [.contacts])
     }
 
+    @Test func rootSearchFindsProfileShortcutsByTitleAndKeyword() {
+        let state = AppState.mock()
+        let cardResults = RootSearchIndex.results(for: "contact card", in: state)
+        let nameResults = RootSearchIndex.results(for: "name", in: state)
+
+        #expect(cardResults.shortcuts == [.sharingCard])
+        #expect(nameResults.shortcuts == [.firstName, .lastName, .nickname])
+    }
+
     @Test func rootSearchTrimsWhitespace() {
         let state = AppState.mock()
         let results = RootSearchIndex.results(for: "  Ava  ", in: state)

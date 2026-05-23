@@ -756,6 +756,17 @@ private struct RootSearchView: View {
             }
         }
 
+        if !rootSearchResults.shortcuts.isEmpty {
+            Section("Profile") {
+                ForEach(rootSearchResults.shortcuts) { shortcut in
+                    NavigationLink(value: shortcut.destination) {
+                        valueRow(title: shortcut.title, value: "", systemImage: shortcut.systemImage)
+                    }
+                    .accessibilityIdentifier("Quick Search Profile \(shortcut.title)")
+                }
+            }
+        }
+
         if !rootSearchResults.contactIDs.isEmpty {
             Section("Contacts") {
                 ForEach(rootSearchResults.contactIDs, id: \.self) { id in
