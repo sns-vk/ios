@@ -537,13 +537,12 @@ struct AccountSingleSelectView<Option: ProfileCriteriaOption>: View {
                             Text(option.label)
                                 .foregroundStyle(.primary)
                             Spacer()
-                            if selection == option {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
-                            }
+                            StaticCheckmark(isVisible: selection == option)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(StaticSelectionRowButtonStyle())
                 }
             } header: {
                 Text(title)
@@ -672,13 +671,12 @@ struct MatchPolicyView: View {
                             Text(policy.label)
                                 .foregroundStyle(.primary)
                             Spacer()
-                            if matchPolicy == policy {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
-                            }
+                            StaticCheckmark(isVisible: matchPolicy == policy)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(StaticSelectionRowButtonStyle())
                 }
             } footer: {
                 Text("Choose how connected they are to you.")
@@ -719,13 +717,12 @@ struct MultiSelectOptionsView<Option: ProfileCriteriaOption>: View {
                     Text(option.label)
                         .foregroundStyle(.primary)
                     Spacer()
-                    if selection.contains(option) {
-                        Image(systemName: "checkmark")
-                            .foregroundStyle(.tint)
-                    }
+                    StaticCheckmark(isVisible: selection.contains(option))
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(StaticSelectionRowButtonStyle())
         }
     }
 
@@ -757,18 +754,39 @@ struct SubstanceUseAnswerView: View {
 
                             Spacer()
 
-                            if selection == option {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
-                            }
+                            StaticCheckmark(isVisible: selection == option)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(StaticSelectionRowButtonStyle())
                     .accessibilityIdentifier("\(title) \(option.label) Substance Use Option")
                 }
             }
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct StaticSelectionRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .transaction { transaction in
+                transaction.animation = nil
+            }
+    }
+}
+
+private struct StaticCheckmark: View {
+    let isVisible: Bool
+
+    var body: some View {
+        Image(systemName: "checkmark")
+            .foregroundStyle(.tint)
+            .opacity(isVisible ? 1 : 0)
+            .transaction { transaction in
+                transaction.animation = nil
+            }
     }
 }

@@ -30,16 +30,18 @@ struct MatchingRadiusView: View {
 
                         Spacer()
 
-                        if extendRadiusIfNeeded {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(.tint)
-                                .accessibilityHidden(true)
-                        }
+                        Image(systemName: "checkmark")
+                            .foregroundStyle(.tint)
+                            .opacity(extendRadiusIfNeeded ? 1 : 0)
+                            .transaction { transaction in
+                                transaction.animation = nil
+                            }
+                            .accessibilityHidden(true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(StaticSelectionRowButtonStyle())
             }
         }
         .navigationTitle("Maximum Radius")
