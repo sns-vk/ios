@@ -120,6 +120,8 @@ struct SharingCardView: View {
                     title: "Photo",
                     systemImage: "camera",
                     sharedField: .photo,
+                    valueOverride: hasMyCardPhoto ? nil : "No photo",
+                    isMuted: !hasMyCardPhoto,
                     accessibilityIdentifier: "Sharing Card Photo Row"
                 )
             }
@@ -217,7 +219,7 @@ struct SharingCardView: View {
                         }
                         .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NoPressFeedbackButtonStyle())
                 .offset(x: 2, y: -2)
                 .accessibilityIdentifier("Choose Account Photo")
             }
@@ -229,10 +231,17 @@ struct SharingCardView: View {
         .accessibilityIdentifier("Sharing Card Photo Editor")
     }
 
+    private var hasMyCardPhoto: Bool {
+        guard let photoData = appState.myCard.photoData else { return false }
+        return UIImage(data: photoData) != nil
+    }
+
     private func sharingCardRow(
         title: String,
         systemImage: String,
         sharedField: ProfileDisclosureField,
+        valueOverride: String? = nil,
+        isMuted: Bool = false,
         accessibilityIdentifier: String
     ) -> some View {
         NavigationLink(value: RootDestination.sharingField(sharedField)) {
@@ -242,14 +251,16 @@ struct SharingCardView: View {
                     .frame(width: 22)
 
                 Text(title)
+                    .foregroundStyle(isMuted ? Color.secondary : Color.primary)
 
                 Spacer()
 
-                Text(disclosureState(for: sharedField).summary)
+                Text(valueOverride ?? disclosureState(for: sharedField).summary)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.trailing)
             }
         }
+        .disabled(isMuted)
         .accessibilityIdentifier(accessibilityIdentifier)
     }
 
@@ -274,14 +285,14 @@ struct SharingFieldView: View {
                     accessibilityIdentifier: "Sharing \(field.title) Not Shared Row"
                 )
                 sharingOptionRow(
-                    title: "Match and contact",
-                    state: .matched,
-                    accessibilityIdentifier: "Sharing \(field.title) Matched Row"
-                )
-                sharingOptionRow(
-                    title: "Contact only",
+                    title: "Shared when exchanging contacts",
                     state: .contact,
                     accessibilityIdentifier: "Sharing \(field.title) Contact Row"
+                )
+                sharingOptionRow(
+                    title: "Shared when releasing matches",
+                    state: .matched,
+                    accessibilityIdentifier: "Sharing \(field.title) Matched Row"
                 )
             } header: {
                 Text(field.title)
@@ -400,6 +411,12 @@ struct MyCardAvatarView: View {
         }
         .frame(width: size, height: size)
         .accessibilityLabel("My Card photo")
+    }
+}
+
+private struct NoPressFeedbackButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }
 
