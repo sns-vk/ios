@@ -1751,6 +1751,17 @@ private struct WeeklyAvailabilityGrid: View {
                                 )
 
                                 timeGutterForeground(height: interactiveContentHeight)
+
+                                timeGutterHorizontalDragOverlay(
+                                    dayWidth: dayWidth,
+                                    height: interactiveContentHeight,
+                                    bounds: CGRect(
+                                        x: 0,
+                                        y: scrollOffsetY - headerHeight,
+                                        width: timeLabelWidth,
+                                        height: headerHeight + gridViewportHeight
+                                    )
+                                )
                             }
                             .frame(width: geometry.size.width, height: interactiveContentHeight, alignment: .topLeading)
                             .coordinateSpace(name: contentCoordinateSpace)
@@ -2009,6 +2020,24 @@ private struct WeeklyAvailabilityGrid: View {
             timeLabels()
         }
         .allowsHitTesting(false)
+    }
+
+    private func timeGutterHorizontalDragOverlay(
+        dayWidth: CGFloat,
+        height: CGFloat,
+        bounds: CGRect
+    ) -> some View {
+        Rectangle()
+            .fill(Color.clear)
+            .contentShape(Rectangle())
+            .frame(width: timeLabelWidth, height: height)
+            .simultaneousGesture(
+                horizontalDateDragGesture(
+                    dayWidth: dayWidth,
+                    bounds: bounds,
+                    ignoresAvailabilityWindows: true
+                )
+            )
     }
 
     private func bottomScrollInset(for viewportHeight: CGFloat) -> CGFloat {
@@ -2331,6 +2360,11 @@ private struct WeeklyAvailabilityGrid: View {
                 }
 
                 guard !isAvailabilityInteractionActive else {
+                    horizontalDragOffset = 0
+                    return
+                }
+
+                guard isHorizontalDateGestureStartInsideBounds(value.startLocation, in: bounds) else {
                     horizontalDragOffset = 0
                     return
                 }
