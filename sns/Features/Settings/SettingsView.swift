@@ -211,7 +211,7 @@ struct SharingCardView: View {
                     Image(systemName: "pencil")
                         .font(.headline)
                         .foregroundStyle(Color.accentColor)
-                        .frame(width: 42, height: 42)
+                        .frame(width: 44, height: 44)
                         .background(Color(.systemBackground), in: Circle())
                         .overlay {
                             Circle()
