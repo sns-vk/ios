@@ -2,20 +2,22 @@ import Foundation
 import Observation
 
 struct AnonymousMatchProfile: Hashable {
-    var name: String
-    var age: Int
-    var pronouns: String
-    var neighborhood: String
-    var bio: String
-    var interests: [String]
+    var firstName: String
+    var lastName: String
+    var pronouns: PronounOption
+    var gender: GenderIdentity
+    var sexuality: SexualityOption
+
+    var name: String {
+        "\(firstName) \(lastName)"
+    }
 
     static let mock = AnonymousMatchProfile(
-        name: "Hannah Miller",
-        age: 26,
-        pronouns: "they/them",
-        neighborhood: "Hayes Valley",
-        bio: "Enjoys low-key coffee, neighborhood walks, and finding quiet places to talk.",
-        interests: ["Coffee", "Walks", "Design", "Books"]
+        firstName: "Hannah",
+        lastName: "Miller",
+        pronouns: .theyThem,
+        gender: .female,
+        sexuality: .straight
     )
 }
 

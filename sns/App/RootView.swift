@@ -521,48 +521,37 @@ private struct MatchProfileView: View {
 
     var body: some View {
         List {
-            Section {
-                HStack(alignment: .center, spacing: 14) {
-                    matchAvatar(size: 56)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(profile.name)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                        Text("This week's match details and meeting plan")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 6)
-            }
+            matchPhoto
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
             Section("Meeting") {
-                matchDetailRow(title: "Date & Time", value: "Thursday, 3:00-3:30 PM", systemImage: "clock")
+                matchDetailRow(title: "Date", value: "Thursday, May 21", systemImage: "calendar")
+                matchDetailRow(title: "Time", value: "3:00 PM–3:30 PM", systemImage: "clock")
                 matchDetailRow(title: "Address", value: "Hayes Cafe Mock Spot", systemImage: "mappin.and.ellipse")
             }
 
             Section("Profile") {
-                matchDetailRow(title: "Age", value: "\(profile.age)", systemImage: "number")
-                matchDetailRow(title: "Pronouns", value: profile.pronouns, systemImage: "text.bubble")
-                matchDetailRow(title: "Neighborhood", value: profile.neighborhood, systemImage: "location")
-            }
-
-            Section("About") {
-                Text(profile.bio)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Interests") {
-                ForEach(profile.interests, id: \.self) { interest in
-                    Text(interest)
-                }
+                matchDetailRow(title: "First Name", value: profile.firstName, systemImage: "person.text.rectangle")
+                matchDetailRow(title: "Last Name", value: profile.lastName, systemImage: "person.text.rectangle")
+                matchDetailRow(title: "Pronouns", value: profile.pronouns.label, systemImage: "text.bubble")
+                matchDetailRow(title: "Gender", value: profile.gender.label, systemImage: "person.fill")
+                matchDetailRow(title: "Sexuality", value: profile.sexuality.label, systemImage: "heart.circle")
             }
         }
-        .navigationTitle(profile.name)
+        .navigationTitle("Meet Your Match")
         .navigationBarTitleDisplayMode(.inline)
         .listStyle(.insetGrouped)
         .accessibilityIdentifier("Weekly Match Detail")
+    }
+
+    private var matchPhoto: some View {
+        matchAvatar(size: 160)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 18)
+            .padding(.bottom, 6)
+            .accessibilityIdentifier("Weekly Match Photo")
     }
 
     private func matchDetailRow(title: String, value: String, systemImage: String) -> some View {
