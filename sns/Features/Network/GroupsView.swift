@@ -560,10 +560,11 @@ struct GroupFormView: View {
                         .onSubmit(saveGroup)
                 }
 
-                Section("Search") {
+                Section("Members") {
                     MemberComposerSearchRow(
                         selectedMembers: selectedMembers,
-                        searchText: $memberSearchText
+                        searchText: $memberSearchText,
+                        onRemoveMember: removeSelection
                     )
                 }
 
@@ -691,6 +692,10 @@ struct GroupFormView: View {
             memberSearchText = ""
         }
     }
+
+    private func removeSelection(for id: AppContact.ID) {
+        selectedContactIDs.removeAll { $0 == id }
+    }
 }
 
 private struct GroupNoPressFeedbackButtonStyle: ButtonStyle {
@@ -702,20 +707,173 @@ private struct GroupNoPressFeedbackButtonStyle: ButtonStyle {
 private struct MemberComposerSearchRow: View {
     let selectedMembers: [AppContact]
     @Binding var searchText: String
+    let onRemoveMember: (AppContact.ID) -> Void
+    @State private var isSearchFocused = false
+    @State private var selectedMemberID: AppContact.ID?
 
     var body: some View {
-        WrappingHStack(spacing: 8, rowSpacing: 6) {
-            ForEach(selectedMembers) { member in
-                Text("\(member.name),")
+        WrappingHStack(spacing: -4, rowSpacing: 6) {
+            ForEach(Array(selectedMembers.enumerated()), id: \.element.id) { index, member in
+                Text(memberDisplayText(for: member, at: index))
                     .fontWeight(.semibold)
+                    .foregroundStyle(selectedMemberID == member.id ? Color.white : Color.primary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background {
+                        if selectedMemberID == member.id {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(Color.accentColor)
+                        }
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .onTapGesture {
+                        selectedMemberID = member.id
+                        isSearchFocused = true
+                    }
             }
 
-            TextField(selectedMembers.isEmpty ? "Search contacts" : "", text: $searchText)
-                .textInputAutocapitalization(.words)
-                .autocorrectionDisabled()
-                .frame(minWidth: 96, idealWidth: 140)
+            BackspaceAwareTextField(
+                placeholder: selectedMembers.isEmpty ? "Search contacts" : "",
+                text: $searchText,
+                isFocused: $isSearchFocused,
+                onBackspaceWhenEmpty: handleBackspaceWhenEmpty,
+                onTextEntry: clearSelectedMember
+            )
+                .frame(width: searchFieldWidth)
+                .frame(height: 24)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 2)
+        .background {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectedMemberID = nil
+                    isSearchFocused = true
+                }
+        }
+        .onChange(of: selectedMembers.map(\.id)) { _, memberIDs in
+            guard let selectedMemberID, !memberIDs.contains(selectedMemberID) else { return }
+            self.selectedMemberID = nil
+        }
+    }
+
+    private func memberDisplayText(for member: AppContact, at index: Int) -> String {
+        let hasFollowingMember = index < selectedMembers.count - 1
+        let isInputting = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let shouldShowComma = hasFollowingMember || isInputting
+
+        return shouldShowComma ? "\(member.name)," : member.name
+    }
+
+    private var searchFieldWidth: CGFloat {
+        if selectedMembers.isEmpty {
+            return 160
+        }
+
+        let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSearchText.isEmpty else { return 4 }
+
+        return max(32, CGFloat(trimmedSearchText.count) * 10 + 18)
+    }
+
+    private func handleBackspaceWhenEmpty() {
+        if let selectedMemberID {
+            onRemoveMember(selectedMemberID)
+            self.selectedMemberID = nil
+            return
+        }
+
+        selectedMemberID = selectedMembers.last?.id
+    }
+
+    private func clearSelectedMember() {
+        selectedMemberID = nil
+    }
+}
+
+private struct BackspaceAwareTextField: UIViewRepresentable {
+    let placeholder: String
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    let onBackspaceWhenEmpty: () -> Void
+    let onTextEntry: () -> Void
+
+    func makeUIView(context: Context) -> BackspaceTextField {
+        let textField = BackspaceTextField()
+        textField.delegate = context.coordinator
+        textField.onBackspaceWhenEmpty = onBackspaceWhenEmpty
+        textField.borderStyle = .none
+        textField.backgroundColor = .clear
+        textField.font = .preferredFont(forTextStyle: .body)
+        textField.adjustsFontForContentSizeCategory = true
+        textField.autocorrectionType = .no
+        textField.autocapitalizationType = .words
+        textField.returnKeyType = .done
+        textField.addTarget(context.coordinator, action: #selector(Coordinator.textDidChange(_:)), for: .editingChanged)
+        return textField
+    }
+
+    func updateUIView(_ uiView: BackspaceTextField, context: Context) {
+        context.coordinator.parent = self
+        uiView.onBackspaceWhenEmpty = onBackspaceWhenEmpty
+        uiView.placeholder = placeholder
+
+        if uiView.text != text {
+            uiView.text = text
+        }
+
+        if isFocused, !uiView.isFirstResponder {
+            uiView.becomeFirstResponder()
+            let endPosition = uiView.endOfDocument
+            uiView.selectedTextRange = uiView.textRange(from: endPosition, to: endPosition)
+        } else if !isFocused, uiView.isFirstResponder {
+            uiView.resignFirstResponder()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: BackspaceAwareTextField
+
+        init(parent: BackspaceAwareTextField) {
+            self.parent = parent
+        }
+
+        @objc func textDidChange(_ textField: UITextField) {
+            parent.text = textField.text ?? ""
+            if !(textField.text ?? "").isEmpty {
+                parent.onTextEntry()
+            }
+        }
+
+        func textFieldDidBeginEditing(_ textField: UITextField) {
+            parent.isFocused = true
+        }
+
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            parent.isFocused = false
+        }
+
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            textField.resignFirstResponder()
+            return true
+        }
+    }
+
+    final class BackspaceTextField: UITextField {
+        var onBackspaceWhenEmpty: (() -> Void)?
+
+        override func deleteBackward() {
+            if text?.isEmpty ?? true {
+                onBackspaceWhenEmpty?()
+            } else {
+                super.deleteBackward()
+            }
+        }
     }
 }
 
