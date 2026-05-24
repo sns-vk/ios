@@ -761,10 +761,11 @@ private struct MemberComposerSearchRow: View {
 
     private func memberDisplayText(for member: AppContact, at index: Int) -> String {
         let hasFollowingMember = index < selectedMembers.count - 1
+        let isEditingAtEnd = isSearchFocused && selectedMemberID == nil
         let isInputting = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let shouldShowComma = hasFollowingMember || isInputting
+        let shouldShowComma = hasFollowingMember || isInputting || isEditingAtEnd
 
-        return shouldShowComma ? "\(member.name)," : member.name
+        return shouldShowComma ? "\(member.name), " : member.name
     }
 
     private var searchFieldWidth: CGFloat {
@@ -773,7 +774,9 @@ private struct MemberComposerSearchRow: View {
         }
 
         let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedSearchText.isEmpty else { return 4 }
+        guard !trimmedSearchText.isEmpty else {
+            return isSearchFocused && selectedMemberID == nil ? 12 : 4
+        }
 
         return max(32, CGFloat(trimmedSearchText.count) * 10 + 18)
     }
