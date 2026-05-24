@@ -131,6 +131,8 @@ struct SharingCardView: View {
                     title: "First Name",
                     systemImage: "person.text.rectangle",
                     sharedField: .firstName,
+                    valueOverride: hasFirstName ? nil : "Not set",
+                    isMuted: !hasFirstName,
                     accessibilityIdentifier: "Sharing Card First Name Row"
                 )
 
@@ -138,6 +140,8 @@ struct SharingCardView: View {
                     title: "Last Name",
                     systemImage: "person.text.rectangle",
                     sharedField: .lastName,
+                    valueOverride: hasLastName ? nil : "Not set",
+                    isMuted: !hasLastName,
                     accessibilityIdentifier: "Sharing Card Last Name Row"
                 )
 
@@ -145,6 +149,8 @@ struct SharingCardView: View {
                     title: "Nickname",
                     systemImage: "quote.bubble",
                     sharedField: .nickname,
+                    valueOverride: hasNickname ? nil : "Not set",
+                    isMuted: !hasNickname,
                     accessibilityIdentifier: "Sharing Card Nickname Row"
                 )
             }
@@ -234,6 +240,22 @@ struct SharingCardView: View {
     private var hasMyCardPhoto: Bool {
         guard let photoData = appState.myCard.photoData else { return false }
         return UIImage(data: photoData) != nil
+    }
+
+    private var hasFirstName: Bool {
+        hasText(appState.myCard.firstName)
+    }
+
+    private var hasLastName: Bool {
+        hasText(appState.myCard.lastName)
+    }
+
+    private var hasNickname: Bool {
+        hasText(appState.myCard.nickname)
+    }
+
+    private func hasText(_ value: String) -> Bool {
+        !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func sharingCardRow(
