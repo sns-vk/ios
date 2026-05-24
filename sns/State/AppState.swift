@@ -673,6 +673,11 @@ extension AppState {
         weeklyAvailability = []
     }
 
+    func advanceAvailabilityToNextBatch() {
+        weeklyBatchEnrollment = nil
+        clearWeeklyAvailability()
+    }
+
     func addAvailabilityWindow(on date: Date, calendar: Calendar = .current) {
         let configuredCalendar = WeeklyAvailabilityCalendar.configuredCalendar(from: calendar)
         let day = configuredCalendar.startOfDay(for: date)

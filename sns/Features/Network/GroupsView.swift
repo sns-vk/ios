@@ -1,9 +1,11 @@
 import SwiftUI
+import UIKit
+import PhotosUI
 
 struct GroupsView: View {
     @Binding var groups: [AppGroup]
     let allContacts: [AppContact]
-    @State private var selectedGroupID: AppGroup.ID?
+    let onOpenGroup: (AppGroup.ID) -> Void
     @State private var isShowingCreateGroup = false
     @State private var activeDragID: AppGroup.ID?
     @State private var activeDragOffset: CGSize = .zero
@@ -62,9 +64,9 @@ struct GroupsView: View {
                                 }
                                 .onTapGesture {
                                     guard activeDragID == nil else { return }
-                                    selectedGroupID = group.id
+                                    onOpenGroup(group.id)
                                 }
-                                .highPriorityGesture(reorderGesture(for: group.id))
+                                .simultaneousGesture(reorderGesture(for: group.id))
                                 .animation(dragActivationAnimation, value: armedDragID == group.id)
                                 .animation(reorderAnimation, value: activeDragID)
                                 .animation(reorderAnimation, value: pendingDropIndex)
@@ -118,22 +120,12 @@ struct GroupsView: View {
             }
         }
         .fullScreenCover(isPresented: $isShowingCreateGroup) {
-            CreateGroupView { name in
-                groups.insert(AppGroup(name: name, members: []), at: 0)
-            }
-        }
-        .sheet(isPresented: Binding(
-            get: { selectedGroupID != nil },
-            set: { isPresented in
-                if !isPresented {
-                    selectedGroupID = nil
-                }
-            }
-        )) {
-            if let selectedGroupID, let group = groupBinding(for: selectedGroupID) {
-                GroupMembersSheetView(group: group, allContacts: allContacts)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
+            GroupFormView(
+                navigationTitle: "New Group",
+                confirmationTitle: "Create",
+                availableContacts: allContacts
+            ) { name, members, photoData in
+                groups.insert(AppGroup(name: name, members: members, photoData: photoData), at: 0)
             }
         }
     }
@@ -156,8 +148,6 @@ struct GroupsView: View {
                 transaction.animation = dragActivationAnimation
 
                 switch value {
-                case .first(true):
-                    state = groupID
                 case .second(true, _):
                     if activeDragID == nil {
                         state = groupID
@@ -323,10 +313,6 @@ struct GroupsView: View {
         min(max(pendingDropIndex ?? visibleGroups.count, 0), visibleGroups.count)
     }
 
-    private func groupBinding(for id: AppGroup.ID) -> Binding<AppGroup>? {
-        guard let index = groups.firstIndex(where: { $0.id == id }) else { return nil }
-        return $groups[index]
-    }
 }
 
 private enum GroupListElement: Identifiable {
@@ -343,32 +329,76 @@ private enum GroupListElement: Identifiable {
     }
 }
 
-private struct GroupRow: View {
-    let group: AppGroup
+extension AppGroup {
+    var hasCustomName: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
-    private var memberSummary: String {
-        guard !group.members.isEmpty else { return "No contacts yet" }
+    var displayTitle: String {
+        if hasCustomName {
+            return name
+        }
 
-        return group.members
-            .map(\.name)
+        return memberSummary
+    }
+
+    var memberSummary: String {
+        guard !members.isEmpty else { return "No contacts yet" }
+
+        return members
+            .map { contact in
+                contact.name.split(separator: " ").first.map(String.init) ?? contact.name
+            }
             .joined(separator: ", ")
     }
 
+    var memberCountSummary: String {
+        "\(members.count) \(members.count == 1 ? "member" : "members")"
+    }
+}
+
+private func contactsMatching(_ query: String, in contacts: [AppContact]) -> [AppContact] {
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else { return contacts }
+
+    return contacts.filter { contact in
+        contact.name.localizedCaseInsensitiveContains(trimmedQuery)
+    }
+}
+
+private func memberOptions(
+    searchText: String,
+    in contacts: [AppContact],
+    selectedIDs: Set<AppContact.ID>
+) -> [AppContact] {
+    let selectedContacts = contacts.filter { selectedIDs.contains($0.id) }
+    let trimmedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else { return selectedContacts }
+
+    let matchingContacts = contactsMatching(trimmedQuery, in: contacts)
+        .filter { !selectedIDs.contains($0.id) }
+
+    return selectedContacts + matchingContacts
+}
+
+private struct GroupRow: View {
+    let group: AppGroup
+
     var body: some View {
         HStack(spacing: 14) {
-            GroupAvatar(name: group.name)
+            GroupAvatar(name: group.displayTitle, photoData: group.photoData)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(group.name)
+                Text(group.displayTitle)
                     .font(.headline)
                     .foregroundStyle(.primary)
 
-                Text(memberSummary)
+                Text(group.memberCountSummary)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
             }
+            .lineLimit(1)
+            .truncationMode(.tail)
 
             Spacer(minLength: 12)
 
@@ -403,27 +433,25 @@ private struct GroupPlaceholderCard: View {
 
 private struct GroupAvatar: View {
     let name: String
-
-    private var initials: String {
-        let initials = name
-            .split(separator: " ")
-            .prefix(2)
-            .compactMap(\.first)
-
-        let value = String(initials).uppercased()
-        return value.isEmpty ? "G" : value
-    }
+    var photoData: Data? = nil
+    var size: CGFloat = 56
 
     var body: some View {
         ZStack {
             Circle()
-                .fill(Color.secondary)
+                .fill(Color.accentColor.opacity(0.16))
 
-            Text(initials)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(Color(.systemBackground))
+            if let photoData, let image = UIImage(data: photoData) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+            } else {
+                VennDiagramIcon(size: size * 0.52, color: Color.accentColor)
+            }
         }
-        .frame(width: 56, height: 56)
+        .frame(width: size, height: size)
     }
 }
 
@@ -443,49 +471,342 @@ private struct GroupPlaceholderFramePreferenceKey: PreferenceKey {
     }
 }
 
-private struct CreateGroupView: View {
-    let onCreate: (String) -> Void
+struct GroupFormView: View {
+    let navigationTitle: String
+    let confirmationTitle: String
+    let availableContacts: [AppContact]
+    let wrapsInNavigationStack: Bool
+    let showsCancelButton: Bool
+    let onSave: (String, [AppContact], Data?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var groupName = ""
+    @State private var selectedContactIDs: [AppContact.ID] = []
+    @State private var memberSearchText = ""
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var photoData: Data?
+
+    init(
+        navigationTitle: String,
+        confirmationTitle: String,
+        availableContacts: [AppContact],
+        initialName: String = "",
+        initialMembers: [AppContact] = [],
+        initialPhotoData: Data? = nil,
+        wrapsInNavigationStack: Bool = true,
+        showsCancelButton: Bool = true,
+        onSave: @escaping (String, [AppContact], Data?) -> Void
+    ) {
+        self.navigationTitle = navigationTitle
+        self.confirmationTitle = confirmationTitle
+        self.availableContacts = availableContacts
+        self.wrapsInNavigationStack = wrapsInNavigationStack
+        self.showsCancelButton = showsCancelButton
+        self.onSave = onSave
+        self._groupName = State(initialValue: initialName)
+        self._selectedContactIDs = State(initialValue: initialMembers.map(\.id))
+        self._photoData = State(initialValue: initialPhotoData)
+    }
 
     private var trimmedGroupName: String {
         groupName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var selectedMembers: [AppContact] {
+        selectedContactIDs.compactMap { id in
+            availableContacts.first { $0.id == id }
+        }
+    }
+
+    private var canCreate: Bool {
+        !trimmedGroupName.isEmpty || !selectedContactIDs.isEmpty
+    }
+
+    private var filteredContacts: [AppContact] {
+        guard isSearchingMembers else { return [] }
+
+        return contactsMatching(memberSearchText, in: availableContacts)
+    }
+
+    private var isSearchingMembers: Bool {
+        !memberSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var shouldShowMemberOptions: Bool {
+        isSearchingMembers
+    }
+
     var body: some View {
-        NavigationStack {
-            Form {
+        if wrapsInNavigationStack {
+            NavigationStack {
+                formContent
+            }
+        } else {
+            formContent
+        }
+    }
+
+    private var formContent: some View {
+        Form {
+                groupPhotoEditor
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+
                 Section("Group") {
-                    TextField("Group name", text: $groupName)
+                    TextField("Group name (optional)", text: $groupName)
                         .textInputAutocapitalization(.words)
                         .submitLabel(.done)
-                        .onSubmit(createGroup)
+                        .onSubmit(saveGroup)
+                }
+
+                Section("Search") {
+                    MemberComposerSearchRow(
+                        selectedMembers: selectedMembers,
+                        searchText: $memberSearchText
+                    )
+                }
+
+                if shouldShowMemberOptions {
+                    Section {
+                        if availableContacts.isEmpty {
+                            Text("No contacts available.")
+                                .foregroundStyle(.secondary)
+                        } else if filteredContacts.isEmpty {
+                            Text("No contacts found")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(filteredContacts) { contact in
+                                Button {
+                                    toggleSelection(for: contact.id)
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "person.crop.circle.fill")
+                                            .font(.title3)
+                                            .foregroundStyle(.secondary)
+
+                                        Text(contact.name)
+                                            .foregroundStyle(.primary)
+
+                                        Spacer()
+
+                                        Image(systemName: "checkmark")
+                                            .font(.headline.weight(.semibold))
+                                            .foregroundStyle(Color.accentColor)
+                                            .opacity(selectedContactIDs.contains(contact.id) ? 1 : 0)
+                                            .animation(nil, value: selectedContactIDs.contains(contact.id))
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    } header: {
+                        Text("Members")
+                    }
                 }
             }
-            .navigationTitle("New Group")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+        .navigationTitle(navigationTitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: selectedPhoto) { _, newPhoto in
+            Task {
+                photoData = try? await newPhoto?.loadTransferable(type: Data.self)
+            }
+        }
+        .toolbar {
+            if showsCancelButton {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         dismiss()
                     }
                 }
+            }
 
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create", action: createGroup)
-                        .disabled(trimmedGroupName.isEmpty)
-                }
+            ToolbarItem(placement: .confirmationAction) {
+                Button(confirmationTitle, action: saveGroup)
+                    .disabled(!canSave)
             }
         }
     }
 
-    private func createGroup() {
-        let name = trimmedGroupName
-        guard !name.isEmpty else { return }
+    private var groupPhotoEditor: some View {
+        VStack(spacing: 12) {
+            ZStack(alignment: .topTrailing) {
+                GroupAvatar(name: displayNameForPhoto, photoData: photoData, size: 160)
 
-        onCreate(name)
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Image(systemName: "pencil")
+                        .font(.headline)
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 44, height: 44)
+                        .background(Color(.systemBackground), in: Circle())
+                        .overlay {
+                            Circle()
+                                .stroke(Color(.separator).opacity(0.45), lineWidth: 1)
+                        }
+                        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+                }
+                .buttonStyle(GroupNoPressFeedbackButtonStyle())
+                .offset(x: 2, y: -2)
+                .accessibilityIdentifier("Choose Group Photo")
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 18)
+        .padding(.bottom, 6)
+        .accessibilityIdentifier("Group Photo Editor")
+    }
+
+    private var displayNameForPhoto: String {
+        if !trimmedGroupName.isEmpty {
+            return trimmedGroupName
+        }
+
+        if !selectedMembers.isEmpty {
+            return selectedMembers
+                .map(\.name)
+                .joined(separator: ", ")
+        }
+
+        return "Group"
+    }
+
+    private var canSave: Bool {
+        canCreate
+    }
+
+    private func saveGroup() {
+        guard canSave else { return }
+
+        onSave(trimmedGroupName, selectedMembers, photoData)
         dismiss()
+    }
+
+    private func toggleSelection(for id: AppContact.ID) {
+        if let index = selectedContactIDs.firstIndex(of: id) {
+            selectedContactIDs.remove(at: index)
+        } else {
+            selectedContactIDs.append(id)
+            memberSearchText = ""
+        }
+    }
+}
+
+private struct GroupNoPressFeedbackButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+    }
+}
+
+private struct MemberComposerSearchRow: View {
+    let selectedMembers: [AppContact]
+    @Binding var searchText: String
+
+    var body: some View {
+        WrappingHStack(spacing: 8, rowSpacing: 6) {
+            ForEach(selectedMembers) { member in
+                Text("\(member.name),")
+                    .fontWeight(.semibold)
+            }
+
+            TextField(selectedMembers.isEmpty ? "Search contacts" : "", text: $searchText)
+                .textInputAutocapitalization(.words)
+                .autocorrectionDisabled()
+                .frame(minWidth: 96, idealWidth: 140)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+private struct WrappingHStack: Layout {
+    let spacing: CGFloat
+    let rowSpacing: CGFloat
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        let maxWidth = proposal.width ?? 0
+        let rows = rows(for: subviews, maxWidth: maxWidth)
+        let height = rows.reduce(CGFloat.zero) { partialResult, row in
+            partialResult + row.height
+        } + rowSpacing * CGFloat(max(rows.count - 1, 0))
+
+        return CGSize(width: maxWidth, height: height)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        let rows = rows(for: subviews, maxWidth: bounds.width)
+        var y = bounds.minY
+
+        for row in rows {
+            var x = bounds.minX
+            for item in row.items {
+                let itemSize = item.size
+                subviews[item.index].place(
+                    at: CGPoint(x: x, y: y + (row.height - itemSize.height) / 2),
+                    proposal: ProposedViewSize(itemSize)
+                )
+                x += itemSize.width + spacing
+            }
+            y += row.height + rowSpacing
+        }
+    }
+
+    private func rows(for subviews: Subviews, maxWidth: CGFloat) -> [Row] {
+        guard !subviews.isEmpty else { return [] }
+
+        let wrappingWidth = max(maxWidth, 1)
+        var rows: [Row] = []
+        var currentRow = Row()
+
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let nextWidth = currentRow.items.isEmpty
+                ? size.width
+                : currentRow.width + spacing + size.width
+
+            if nextWidth > wrappingWidth, !currentRow.items.isEmpty {
+                rows.append(currentRow)
+                currentRow = Row()
+            }
+
+            currentRow.append(index: index, size: size, spacing: spacing)
+        }
+
+        if !currentRow.items.isEmpty {
+            rows.append(currentRow)
+        }
+
+        return rows
+    }
+
+    private struct Row {
+        var items: [Item] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+
+        mutating func append(index: Int, size: CGSize, spacing: CGFloat) {
+            if !items.isEmpty {
+                width += spacing
+            }
+
+            items.append(Item(index: index, size: size))
+            width += size.width
+            height = max(height, size.height)
+        }
+    }
+
+    private struct Item {
+        let index: Int
+        let size: CGSize
     }
 }
 
@@ -515,7 +836,7 @@ struct AddContactToGroupsSheetView: View {
                         } label: {
                             HStack(spacing: 12) {
                                 VennDiagramIcon()
-                                Text(groups[groupIndex].name)
+                                Text(groups[groupIndex].displayTitle)
                                 Spacer()
                                 Image(systemName: "plus.circle.fill")
                                     .foregroundStyle(.green)
@@ -543,33 +864,47 @@ struct GroupMembersSheetView: View {
 
     @State private var isEditingMembers = false
     @State private var showAddMembersSheet = false
+    @State private var memberSearchText = ""
+
+    private var filteredMembers: [AppContact] {
+        contactsMatching(memberSearchText, in: group.members)
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                ForEach(group.members) { member in
-                    HStack(spacing: 12) {
-                        if isEditingMembers {
-                            Button {
-                                removeMember(member.id)
-                            } label: {
-                                Image(systemName: "minus.circle.fill")
-                                    .foregroundStyle(.red)
+                if group.members.isEmpty {
+                    Text("No contacts yet.")
+                        .foregroundStyle(.secondary)
+                } else if filteredMembers.isEmpty {
+                    Text("No contacts found")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(filteredMembers) { member in
+                        HStack(spacing: 12) {
+                            if isEditingMembers {
+                                Button {
+                                    removeMember(member.id)
+                                } label: {
+                                    Image(systemName: "minus.circle.fill")
+                                        .foregroundStyle(.red)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
+
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+
+                            Text(member.name)
                         }
-
-                        Image(systemName: "person.crop.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-
-                        Text(member.name)
+                        .padding(.vertical, 2)
                     }
-                    .padding(.vertical, 2)
                 }
             }
             .listStyle(.plain)
-            .navigationTitle(group.name)
+            .navigationTitle(group.displayTitle)
+            .searchable(text: $memberSearchText, prompt: "Search Members")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(isEditingMembers ? "Done" : "Edit") {
@@ -615,24 +950,49 @@ struct AddMembersToGroupSheetView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var selectedContactIDs: Set<AppContact.ID> = []
+    @State private var memberSearchText = ""
+
+    private var filteredContacts: [AppContact] {
+        memberOptions(searchText: memberSearchText, in: availableContacts, selectedIDs: selectedContactIDs)
+    }
 
     var body: some View {
         NavigationStack {
-            List(availableContacts) { contact in
-                Button {
-                    toggleSelection(for: contact.id)
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: selectedContactIDs.contains(contact.id) ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(selectedContactIDs.contains(contact.id) ? .green : .secondary)
+            List {
+                if availableContacts.isEmpty {
+                    Text("No contacts available.")
+                        .foregroundStyle(.secondary)
+                } else if filteredContacts.isEmpty && memberSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Search contacts to add members.")
+                        .foregroundStyle(.secondary)
+                } else if filteredContacts.isEmpty {
+                    Text("No contacts found")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(filteredContacts) { contact in
+                        Button {
+                            toggleSelection(for: contact.id)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Text(contact.name)
+                                    .foregroundStyle(.primary)
 
-                        Text(contact.name)
-                            .foregroundStyle(.primary)
+                                Spacer()
+
+                                Image(systemName: "checkmark")
+                                    .font(.headline.weight(.semibold))
+                                    .foregroundStyle(Color.accentColor)
+                                    .opacity(selectedContactIDs.contains(contact.id) ? 1 : 0)
+                                    .animation(nil, value: selectedContactIDs.contains(contact.id))
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-                .buttonStyle(.plain)
             }
             .navigationTitle("Add Members")
+            .searchable(text: $memberSearchText, prompt: "Search Contacts")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {

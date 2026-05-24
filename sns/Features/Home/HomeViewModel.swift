@@ -53,6 +53,11 @@ final class HomeViewModel {
         beginMatchSimulation()
     }
 
+    func advanceToNextBatchAfterMatch() {
+        isEnrolledInBatch = false
+        sliderResetTrigger += 1
+    }
+
     func cancelMatchSimulation() {
         matchTimerTask?.cancel()
         matchTimerTask = nil

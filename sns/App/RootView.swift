@@ -306,12 +306,35 @@ struct RootView: View {
             } else {
                 Text("Contact unavailable")
             }
+        case .group(let id):
+            if let group = groupBinding(for: id) {
+                GroupFormView(
+                    navigationTitle: group.wrappedValue.displayTitle,
+                    confirmationTitle: "Save",
+                    availableContacts: appState.contacts,
+                    initialName: group.wrappedValue.name,
+                    initialMembers: group.wrappedValue.members,
+                    initialPhotoData: group.wrappedValue.photoData,
+                    wrapsInNavigationStack: false,
+                    showsCancelButton: false
+                ) { name, members, photoData in
+                    group.wrappedValue.name = name
+                    group.wrappedValue.members = members
+                    group.wrappedValue.photoData = photoData
+                }
+            } else {
+                Text("Group unavailable")
+            }
         case .myCard:
             SharingCardView(appState: appState)
         case .matchProfile:
             MatchProfileView(profile: homeViewModel.matchProfile)
         case .matchCriteria:
-            MatchCriteriaView(appState: appState, isEnrolledInBatch: isEnrolledInBatch)
+            MatchCriteriaView(
+                appState: appState,
+                isEnrolledInBatch: isEnrolledInBatch || homeViewModel.hasMatchThisWeek,
+                hasMatchThisWeek: homeViewModel.hasMatchThisWeek
+            )
         case .weeklyBatchAvailability:
             WeeklyBatchAvailabilityView(
                 appState: appState,
@@ -351,7 +374,8 @@ struct RootView: View {
     private func resetAvailabilityAfterMatchIfNeeded() {
         guard homeViewModel.hasMatchThisWeek, !hasClearedAvailabilityForCurrentMatch else { return }
 
-        appState.clearWeeklyAvailability()
+        appState.advanceAvailabilityToNextBatch()
+        homeViewModel.advanceToNextBatchAfterMatch()
         availabilityVisibleStartIndex = 5
         availabilityTopMinute = (16 * 60) + 30
         hasClearedAvailabilityForCurrentMatch = true
@@ -364,7 +388,9 @@ struct RootView: View {
             ContactsView(appState: appState)
                 .navigationTitle("Contacts")
         case .groups:
-            GroupsView(groups: $appState.groups, allContacts: appState.contacts)
+            GroupsView(groups: $appState.groups, allContacts: appState.contacts) { id in
+                router.open(.group(id))
+            }
                 .navigationTitle("Groups")
         case .location:
             MatchingLocationView(location: $appState.matchingLocation)
@@ -441,6 +467,11 @@ struct RootView: View {
     private func contactBinding(for id: AppContact.ID) -> Binding<AppContact>? {
         guard let index = appState.contacts.firstIndex(where: { $0.id == id }) else { return nil }
         return $appState.contacts[index]
+    }
+
+    private func groupBinding(for id: AppGroup.ID) -> Binding<AppGroup>? {
+        guard let index = appState.groups.firstIndex(where: { $0.id == id }) else { return nil }
+        return $appState.groups[index]
     }
 
     private func substanceUseBinding(for category: SubstanceUseCategory) -> Binding<SubstanceUseAnswer> {
@@ -601,6 +632,7 @@ private struct MatchProfileView: View {
 private struct MatchCriteriaView: View {
     @Bindable var appState: AppState
     let isEnrolledInBatch: Bool
+    let hasMatchThisWeek: Bool
 
     var body: some View {
         List {
@@ -609,7 +641,7 @@ private struct MatchCriteriaView: View {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "lock.fill")
                             .foregroundStyle(.secondary)
-                        Text("This week's criteria are locked. Changes here apply to next week's batch.")
+                        Text(criteriaNoticeText)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -663,6 +695,14 @@ private struct MatchCriteriaView: View {
         .listStyle(.insetGrouped)
     }
 
+    private var criteriaNoticeText: String {
+        if hasMatchThisWeek {
+            return "Changes here apply to next week's batch."
+        }
+
+        return "This week's criteria are locked. Changes here apply to next week's batch."
+    }
+
     private func valueRow(title: String, value: String, systemImage: String) -> some View {
         HStack(spacing: 12) {
             rowIcon(systemImage)
@@ -700,7 +740,6 @@ private struct RootSearchView: View {
     let onDismissSearch: () -> Void
 
     @State private var searchText = ""
-    @State private var selectedGroupID: AppGroup.ID?
 
     private var rootSearchResults: RootSearchResults {
         RootSearchIndex.results(for: searchText, in: appState)
@@ -718,20 +757,6 @@ private struct RootSearchView: View {
         .onChange(of: isSearchPresented) { oldValue, newValue in
             if oldValue && !newValue {
                 dismissSearch()
-            }
-        }
-        .sheet(isPresented: Binding(
-            get: { selectedGroupID != nil },
-            set: { isPresented in
-                if !isPresented {
-                    selectedGroupID = nil
-                }
-            }
-        )) {
-            if let selectedGroupID, let group = groupBinding(for: selectedGroupID) {
-                GroupMembersSheetView(group: group, allContacts: appState.contacts)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
             }
         }
     }
@@ -788,12 +813,13 @@ private struct RootSearchView: View {
             Section("Groups") {
                 ForEach(rootSearchResults.groupIDs, id: \.self) { id in
                     if let group = groupBinding(for: id) {
-                        Button {
-                            selectedGroupID = id
-                        } label: {
-                            valueRow(title: group.wrappedValue.name, value: "\(group.wrappedValue.members.count) members", systemImage: "venn.diagram.fill")
+                        NavigationLink(value: RootDestination.group(id)) {
+                            valueRow(
+                                title: group.wrappedValue.displayTitle,
+                                value: group.wrappedValue.memberCountSummary,
+                                systemImage: "venn.diagram.fill"
+                            )
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -853,7 +879,7 @@ private struct WeeklyBatchAvailabilityView: View {
                     }
 
                 VStack(alignment: .leading, spacing: 16) {
-                    if isEnrolledInBatch {
+                    if shouldShowAvailabilityNotice {
                         lockedAvailabilityNotice
                     }
 
@@ -928,7 +954,7 @@ private struct WeeklyBatchAvailabilityView: View {
 
     private var lockedAvailabilityNoticeText: String {
         if hasMatchThisWeek {
-            return "Your meeting time this week has been arranged. Changes here apply to next week's batch."
+            return "Changes here apply to next week's batch."
         }
 
         return "This week's availability is locked. Changes here apply to next week's batch."
@@ -936,9 +962,13 @@ private struct WeeklyBatchAvailabilityView: View {
 
     private func gridHeight(for containerHeight: CGFloat, bottomSafeArea: CGFloat) -> CGFloat {
         let tabBarClearance: CGFloat = 96
-        let noticeClearance: CGFloat = isEnrolledInBatch ? 80 : 0
+        let noticeClearance: CGFloat = shouldShowAvailabilityNotice ? 80 : 0
         let reservedHeight = 130 + noticeClearance + max(bottomSafeArea, tabBarClearance)
         return min(max(containerHeight - reservedHeight, 360), 620)
+    }
+
+    private var shouldShowAvailabilityNotice: Bool {
+        isEnrolledInBatch || hasMatchThisWeek
     }
 }
 

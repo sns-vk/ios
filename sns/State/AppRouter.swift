@@ -66,6 +66,7 @@ enum RootDestination: Hashable {
     case sharingField(ProfileDisclosureField)
     case matchSubstanceUse(SubstanceUseCategory)
     case contact(AppContact.ID)
+    case group(AppGroup.ID)
     case myCard
     case matchProfile
     case matchCriteria
