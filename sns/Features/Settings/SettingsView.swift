@@ -412,7 +412,7 @@ struct MyCardAvatarView: View {
             }
         }
         .frame(width: size, height: size)
-        .accessibilityLabel("My Card photo")
+        .accessibilityLabel("Profile photo")
     }
 }
 

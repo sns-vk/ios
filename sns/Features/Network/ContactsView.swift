@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct ContactsView: View {
     @Bindable var appState: AppState
@@ -33,9 +34,7 @@ struct ContactsView: View {
                             }
                         } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: "person.crop.circle.fill")
-                                    .font(.title3)
-                                    .foregroundStyle(.secondary)
+                                ContactListAvatar(contact: contact)
 
                                 Text(contact.name)
                             }
@@ -63,6 +62,25 @@ struct ContactsView: View {
             AddContactTapSheetView()
                 .presentationDetents([.fraction(0.4)])
                 .presentationDragIndicator(.visible)
+        }
+    }
+}
+
+private struct ContactListAvatar: View {
+    let contact: AppContact
+    var size: CGFloat = 24
+
+    var body: some View {
+        if let photoData = contact.photoData, let image = UIImage(data: photoData) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+        } else {
+            Image(systemName: "person.crop.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -168,187 +186,116 @@ struct AddContactTapSheetView: View {
 struct ContactDetailView: View {
     @Binding var contact: AppContact
     @Binding var groups: [AppGroup]
-    @State private var isEditing = false
-    @State private var showAddToGroupSheet = false
+    @State private var selectedPhoto: PhotosPickerItem?
 
     var body: some View {
         Form {
-            Section("Recommendations") {
-                Toggle("Use for matching", isOn: $contact.useForFoFRecommendations)
+            photoEditor
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+
+            Section("Profile") {
+                NavigationLink {
+                    AccountAgeView(age: $contact.age)
+                } label: {
+                    contactValueRow(title: "Age", value: AgeDisplay.label(for: contact.age), systemImage: "number")
+                }
+
+                NavigationLink {
+                    AccountSingleSelectView(title: "Gender", selection: $contact.gender)
+                } label: {
+                    contactValueRow(title: "Gender", value: contact.gender.label, systemImage: "person.fill")
+                }
+
+                NavigationLink {
+                    AccountSingleSelectView(title: "Pronouns", selection: $contact.pronouns)
+                } label: {
+                    contactValueRow(title: "Pronouns", value: contact.pronouns.label, systemImage: "text.bubble")
+                }
+
+                NavigationLink {
+                    AccountSingleSelectView(title: "Sexuality", selection: $contact.sexuality)
+                } label: {
+                    contactValueRow(title: "Sexuality", value: contact.sexuality.label, systemImage: "heart.circle")
+                }
             }
 
             Section("Groups") {
-                if memberGroupIndices.isEmpty {
-                    Text("Not in any groups")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(memberGroupIndices, id: \.self) { index in
-                        HStack(spacing: 12) {
-                            if isEditing {
-                                Button {
-                                    removeContactFromGroup(at: index)
-                                } label: {
-                                    Image(systemName: "minus.circle.fill")
-                                        .foregroundStyle(.red)
-                                }
-                                .buttonStyle(.plain)
-                            }
-
-                            Text(groups[index].name)
-                        }
-                    }
-                }
-
-                if isEditing {
-                    Button("Add to Group") {
-                        showAddToGroupSheet = true
-                    }
-                    .disabled(availableGroupIndices.isEmpty)
+                NavigationLink {
+                    ContactGroupsView(contact: $contact, groups: $groups)
+                } label: {
+                    contactValueRow(title: "Membership", value: groupsSummary, systemImage: "circle.grid.2x1.left.filled")
                 }
             }
 
-            if isEditing {
-                Section("Name") {
-                    TextField("First Name", text: $contact.firstName)
-                    TextField("Last Name", text: $contact.lastName)
-                }
-
-                Section("Profile") {
-                    TextField("Description", text: $contact.bio)
-                    TextField("Pronouns", text: $contact.pronouns)
-                }
-
-                Section("Contact") {
-                    TextField("Phone", text: $contact.phone)
-                        .keyboardType(.phonePad)
-                    TextField("Email", text: $contact.email)
-                        .keyboardType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                    TextField("Address", text: $contact.address)
-                    TextField("URL", text: $contact.websiteURL)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                }
-
-                Section("Dates") {
-                    if contact.birthday == nil {
-                        Button("Add Birthday") {
-                            contact.birthday = Date()
-                        }
-                    } else {
-                        DatePicker("Birthday", selection: birthdayBinding, displayedComponents: .date)
-                        Button("Remove Birthday", role: .destructive) {
-                            contact.birthday = nil
-                        }
-                    }
-                }
-
-                Section("Notes") {
-                    TextEditor(text: $contact.notes)
-                        .frame(minHeight: 120)
-                }
-            } else {
-                if hasNameContent {
-                    Section("Name") {
-                        if !contact.firstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            detailRow(title: "First Name", value: contact.firstName)
-                        }
-                        if !contact.lastName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            detailRow(title: "Last Name", value: contact.lastName)
-                        }
-                    }
-                }
-
-                if hasProfileContent {
-                    Section("Profile") {
-                        detailRow(title: "Description", value: contact.bio)
-                        detailRow(title: "Pronouns", value: contact.pronouns)
-                    }
-                }
-
-                if hasContactContent {
-                    Section("Contact") {
-                        detailRow(title: "Phone", value: contact.phone)
-                        detailRow(title: "Email", value: contact.email)
-                        detailRow(title: "Address", value: contact.address)
-                        detailRow(title: "URL", value: contact.websiteURL)
-                    }
-                }
-
-                if contact.birthday != nil {
-                    Section("Dates") {
-                        if let birthday = contact.birthday {
-                            detailRow(title: "Birthday", value: Self.dateFormatter.string(from: birthday))
-                        }
-                    }
-                }
-
-                if !contact.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Section("Notes") {
-                        Text(contact.notes)
+            Section("Substance Use") {
+                ForEach(SubstanceUseCategory.allCases) { category in
+                    NavigationLink {
+                        AccountSubstanceUseView(
+                            category: category,
+                            selection: substanceUseBinding(for: category)
+                        )
+                    } label: {
+                        contactValueRow(
+                            title: category.label,
+                            value: contact.substanceUse[category, default: .no].label,
+                            systemImage: category.systemImage
+                        )
                     }
                 }
             }
-        }
-        .overlay {
-            if !isEditing && !hasAnyProfileContent {
-                ContentUnavailableView("No Profile Info Yet", systemImage: "person.text.rectangle")
+
+            Section("Notes") {
+                NavigationLink {
+                    ContactNotesView(notes: $contact.notes)
+                } label: {
+                    contactValueRow(title: "Notes", value: notesSummary, systemImage: "note.text")
+                }
             }
         }
         .navigationTitle(contact.name)
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showAddToGroupSheet) {
-            AddContactToGroupsSheetView(groups: $groups, contact: contact)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(isEditing ? "Done" : "Edit") {
-                    isEditing.toggle()
-                }
+        .onChange(of: selectedPhoto) { _, newPhoto in
+            Task {
+                contact.photoData = try? await newPhoto?.loadTransferable(type: Data.self)
             }
         }
     }
 
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return formatter
-    }()
+    private var photoEditor: some View {
+        VStack(spacing: 12) {
+            ZStack(alignment: .topTrailing) {
+                MyCardAvatarView(contact: contact, size: 160)
 
-    private var birthdayBinding: Binding<Date> {
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Image(systemName: "pencil")
+                        .font(.headline)
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 44, height: 44)
+                        .background(Color(.systemBackground), in: Circle())
+                        .overlay {
+                            Circle()
+                                .stroke(Color(.separator).opacity(0.45), lineWidth: 1)
+                        }
+                        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+                }
+                .buttonStyle(ContactNoPressFeedbackButtonStyle())
+                .offset(x: 2, y: -2)
+                .accessibilityIdentifier("Choose Contact Photo")
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 18)
+        .padding(.bottom, 6)
+        .accessibilityIdentifier("Contact Photo Editor")
+    }
+
+    private func substanceUseBinding(for category: SubstanceUseCategory) -> Binding<SubstanceUseAnswer> {
         Binding(
-            get: { contact.birthday ?? Date() },
-            set: { contact.birthday = $0 }
+            get: { contact.substanceUse[category, default: .no] },
+            set: { contact.substanceUse[category] = $0 }
         )
-    }
-
-    private var hasNameContent: Bool {
-        !contact.firstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !contact.lastName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var hasProfileContent: Bool {
-        !contact.bio.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !contact.pronouns.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var hasContactContent: Bool {
-        !contact.phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !contact.email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !contact.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !contact.websiteURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var hasAnyProfileContent: Bool {
-        hasNameContent ||
-        hasProfileContent ||
-        hasContactContent ||
-        contact.birthday != nil ||
-        !contact.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var memberGroupIndices: [Int] {
@@ -357,26 +304,171 @@ struct ContactDetailView: View {
         }
     }
 
-    private var availableGroupIndices: [Int] {
-        groups.indices.filter { groupIndex in
-            !groups[groupIndex].members.contains(where: { $0.id == contact.id })
+    private var groupsSummary: String {
+        guard !memberGroupIndices.isEmpty else { return "Not in any groups" }
+
+        if memberGroupIndices.count == 1, let index = memberGroupIndices.first {
+            return groups[index].displayTitle
         }
+
+        return "\(memberGroupIndices.count) groups"
     }
 
-    private func removeContactFromGroup(at groupIndex: Int) {
-        groups[groupIndex].members.removeAll { $0.id == contact.id }
+    private var notesSummary: String {
+        let trimmed = contact.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Not set" : trimmed
     }
 
     @ViewBuilder
-    private func detailRow(title: String, value: String) -> some View {
-        if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(value.trimmingCharacters(in: .whitespacesAndNewlines))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
+    private func contactValueRow(title: String, value: String, systemImage: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .frame(width: 28)
+
+            Text(title)
+
+            Spacer()
+
+            Text(value.trimmingCharacters(in: .whitespacesAndNewlines))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+}
+
+private struct ContactGroupsView: View {
+    @Binding var contact: AppContact
+    @Binding var groups: [AppGroup]
+    @State private var searchText = ""
+
+    private var selectedGroupIndices: [Int] {
+        groups.indices.filter { index in
+            isContactMember(of: groups[index])
+        }
+    }
+
+    private var searchResults: [Int] {
+        let trimmedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return [] }
+
+        return groups.indices.filter { index in
+            groupMatches(groups[index], query: trimmedQuery)
+        }
+    }
+
+    var body: some View {
+        Form {
+            Section("Selected") {
+                if selectedGroupIndices.isEmpty {
+                    Text("Not in any groups")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(selectedGroupIndices, id: \.self) { index in
+                        groupToggleRow(for: groups[index])
+                    }
+                }
+            }
+
+            Section("Search") {
+                TextField("Search groups", text: $searchText)
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled(true)
+            }
+
+            if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Section("Results") {
+                    if searchResults.isEmpty {
+                        Text("No groups found")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(searchResults, id: \.self) { index in
+                            groupToggleRow(for: groups[index])
+                        }
+                    }
+                }
             }
         }
+        .navigationTitle("Groups")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder
+    private func groupToggleRow(for group: AppGroup) -> some View {
+        Button {
+            toggleMembership(for: group.id)
+        } label: {
+            HStack(spacing: 14) {
+                GroupAvatar(name: group.displayTitle, photoData: group.photoData, size: 44)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(group.displayTitle)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+
+                    Text(group.memberCountSummary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .lineLimit(1)
+
+                Spacer(minLength: 12)
+
+                Image(systemName: "checkmark")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .opacity(isContactMember(of: group) ? 1 : 0)
+                    .animation(nil, value: isContactMember(of: group))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("Contact Group \(group.displayTitle)")
+    }
+
+    private func groupMatches(_ group: AppGroup, query: String) -> Bool {
+        group.displayTitle.localizedCaseInsensitiveContains(query)
+            || group.name.localizedCaseInsensitiveContains(query)
+            || group.memberSummary.localizedCaseInsensitiveContains(query)
+            || group.members.contains { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    private func isContactMember(of group: AppGroup) -> Bool {
+        group.members.contains { $0.id == contact.id }
+    }
+
+    private func toggleMembership(for groupID: AppGroup.ID) {
+        guard let index = groups.firstIndex(where: { $0.id == groupID }) else { return }
+
+        if let memberIndex = groups[index].members.firstIndex(where: { $0.id == contact.id }) {
+            groups[index].members.remove(at: memberIndex)
+        } else {
+            groups[index].members.append(contact)
+        }
+    }
+}
+
+private struct ContactNotesView: View {
+    @Binding var notes: String
+
+    var body: some View {
+        Form {
+            Section("Notes") {
+                TextEditor(text: $notes)
+                    .frame(minHeight: 120)
+                    .accessibilityIdentifier("Contact Notes Editor")
+            }
+        }
+        .navigationTitle("Notes")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct ContactNoPressFeedbackButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }

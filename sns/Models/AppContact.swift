@@ -29,7 +29,11 @@ struct AppContact: Identifiable, Hashable {
     var email: String
     var preferredContactMethod: PreferredContactMethod
     var preferredContactDetail: String
-    var pronouns: String
+    var age: Int
+    var gender: GenderIdentity
+    var pronouns: PronounOption
+    var sexuality: SexualityOption
+    var substanceUse: [SubstanceUseCategory: SubstanceUseAnswer]
     var address: String
     var websiteURL: String
     var birthday: Date?
@@ -64,7 +68,14 @@ struct AppContact: Identifiable, Hashable {
         }
     }
 
-    init(name: String) {
+    init(
+        name: String,
+        age: Int = 24,
+        gender: GenderIdentity = .female,
+        pronouns: PronounOption? = nil,
+        sexuality: SexualityOption = .notListed,
+        substanceUse: [SubstanceUseCategory: SubstanceUseAnswer] = AppContact.defaultSubstanceUse
+    ) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let parts = trimmed.split(separator: " ", maxSplits: 1).map(String.init)
         self.firstName = parts.first ?? ""
@@ -76,12 +87,30 @@ struct AppContact: Identifiable, Hashable {
         self.email = ""
         self.preferredContactMethod = .email
         self.preferredContactDetail = ""
-        self.pronouns = ""
+        self.age = age
+        self.gender = gender
+        self.pronouns = pronouns ?? gender.defaultPronouns
+        self.sexuality = sexuality
+        self.substanceUse = substanceUse
         self.address = ""
         self.websiteURL = ""
         self.birthday = nil
         self.notes = ""
         self.useForFoFRecommendations = true
+    }
+
+    static let defaultSubstanceUse: [SubstanceUseCategory: SubstanceUseAnswer] = Dictionary(
+        uniqueKeysWithValues: SubstanceUseCategory.allCases.map { ($0, .no) }
+    )
+}
+
+private extension GenderIdentity {
+    var defaultPronouns: PronounOption {
+        switch self {
+        case .male: .heHim
+        case .female: .sheHer
+        case .nonbinary: .theyThem
+        }
     }
 }
 

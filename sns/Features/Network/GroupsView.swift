@@ -431,7 +431,7 @@ private struct GroupPlaceholderCard: View {
     }
 }
 
-private struct GroupAvatar: View {
+struct GroupAvatar: View {
     let name: String
     var photoData: Data? = nil
     var size: CGFloat = 56
