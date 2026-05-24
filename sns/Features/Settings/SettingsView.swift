@@ -312,15 +312,17 @@ struct SharingFieldView: View {
             setDisclosureState(state)
         } label: {
             HStack {
-                Image(systemName: currentState == state ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(currentState == state ? Color.accentColor : Color.secondary)
-
                 Text(title)
                     .foregroundStyle(.primary)
+
+                Spacer()
+
+                RadioSelectionIndicator(isSelected: currentState == state)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(StaticSelectionRowButtonStyle())
         .accessibilityIdentifier(accessibilityIdentifier)
     }
 
@@ -554,7 +556,7 @@ struct AccountSingleSelectView<Option: ProfileCriteriaOption>: View {
                             Text(option.label)
                                 .foregroundStyle(.primary)
                             Spacer()
-                            StaticCheckmark(isVisible: selection == option)
+                            RadioSelectionIndicator(isSelected: selection == option)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -576,7 +578,8 @@ struct AccountSubstanceUseView: View {
     var body: some View {
         SubstanceUseAnswerView(
             title: category.label,
-            selection: $selection
+            selection: $selection,
+            indicatorStyle: .radio
         )
     }
 }
@@ -757,6 +760,7 @@ struct MultiSelectOptionsView<Option: ProfileCriteriaOption>: View {
 struct SubstanceUseAnswerView: View {
     let title: String
     @Binding var selection: SubstanceUseAnswer
+    var indicatorStyle: SingleSelectionIndicatorStyle = .checkmark
 
     var body: some View {
         Form {
@@ -771,7 +775,10 @@ struct SubstanceUseAnswerView: View {
 
                             Spacer()
 
-                            StaticCheckmark(isVisible: selection == option)
+                            SingleSelectionIndicator(
+                                isSelected: selection == option,
+                                style: indicatorStyle
+                            )
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -783,6 +790,39 @@ struct SubstanceUseAnswerView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+enum SingleSelectionIndicatorStyle {
+    case checkmark
+    case radio
+}
+
+private struct SingleSelectionIndicator: View {
+    let isSelected: Bool
+    let style: SingleSelectionIndicatorStyle
+
+    var body: some View {
+        switch style {
+        case .checkmark:
+            StaticCheckmark(isVisible: isSelected)
+        case .radio:
+            RadioSelectionIndicator(isSelected: isSelected)
+        }
+    }
+}
+
+private struct RadioSelectionIndicator: View {
+    let isSelected: Bool
+
+    var body: some View {
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            .font(.title3)
+            .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+            .transaction { transaction in
+                transaction.animation = nil
+            }
+            .accessibilityHidden(true)
     }
 }
 
