@@ -669,6 +669,10 @@ extension AppState {
             }
     }
 
+    func clearWeeklyAvailability() {
+        weeklyAvailability = []
+    }
+
     func addAvailabilityWindow(on date: Date, calendar: Calendar = .current) {
         let configuredCalendar = WeeklyAvailabilityCalendar.configuredCalendar(from: calendar)
         let day = configuredCalendar.startOfDay(for: date)

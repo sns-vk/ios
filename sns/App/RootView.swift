@@ -10,6 +10,7 @@ struct RootView: View {
     @State private var enrollmentShimmerTrigger = 0
     @State private var matchCardShimmerTrigger = 0
     @State private var hasShownMatchTab = false
+    @State private var hasClearedAvailabilityForCurrentMatch = false
     @State private var availabilityVisibleStartIndex = 5
     @State private var availabilityTopMinute = (16 * 60) + 30
 
@@ -31,9 +32,6 @@ struct RootView: View {
                         Button("OK", role: .cancel) {}
                     } message: {
                         Text("Sliding to enroll locks availability, criteria, and referral network for next week. Edits afterward apply to later batches. Each batch closes Sunday @ 11:59 PM local time.")
-                    }
-                    .onDisappear {
-                        homeViewModel.cancelMatchSimulation()
                     }
                     .onAppear {
                         triggerEnrollmentShimmerAfterFirstAppearance()
@@ -90,8 +88,15 @@ struct RootView: View {
             triggerMatchCardShimmerIfNeeded()
         }
         .onChange(of: homeViewModel.hasMatchThisWeek) { _, hasMatch in
-            guard hasMatch else { return }
+            guard hasMatch else {
+                hasClearedAvailabilityForCurrentMatch = false
+                return
+            }
+            resetAvailabilityAfterMatchIfNeeded()
             triggerMatchCardShimmerIfNeeded()
+        }
+        .onAppear {
+            resetAvailabilityAfterMatchIfNeeded()
         }
     }
 
@@ -311,6 +316,7 @@ struct RootView: View {
             WeeklyBatchAvailabilityView(
                 appState: appState,
                 isEnrolledInBatch: isEnrolledInBatch,
+                hasMatchThisWeek: homeViewModel.hasMatchThisWeek,
                 visibleStartIndex: $availabilityVisibleStartIndex,
                 topVisibleMinute: $availabilityTopMinute
             )
@@ -319,6 +325,7 @@ struct RootView: View {
 
     private func enrollInWeeklyBatch() {
         appState.enrollInWeeklyBatch()
+        hasClearedAvailabilityForCurrentMatch = false
         homeViewModel.confirmEnrollment()
     }
 
@@ -339,6 +346,15 @@ struct RootView: View {
     private func triggerMatchCardShimmerIfNeeded() {
         guard homeViewModel.hasMatchThisWeek else { return }
         matchCardShimmerTrigger += 1
+    }
+
+    private func resetAvailabilityAfterMatchIfNeeded() {
+        guard homeViewModel.hasMatchThisWeek, !hasClearedAvailabilityForCurrentMatch else { return }
+
+        appState.clearWeeklyAvailability()
+        availabilityVisibleStartIndex = 5
+        availabilityTopMinute = (16 * 60) + 30
+        hasClearedAvailabilityForCurrentMatch = true
     }
 
     @ViewBuilder
@@ -817,10 +833,15 @@ private struct RootSearchView: View {
 private struct WeeklyBatchAvailabilityView: View {
     @Bindable var appState: AppState
     let isEnrolledInBatch: Bool
+    let hasMatchThisWeek: Bool
     @Binding var visibleStartIndex: Int
     @Binding var topVisibleMinute: Int
     @State private var activeWindowID: AvailabilityWindow.ID?
     @State private var editingWindowContext: AvailabilityWindowEditContext?
+
+    private var isLocked: Bool {
+        isEnrolledInBatch && !hasMatchThisWeek
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -832,9 +853,13 @@ private struct WeeklyBatchAvailabilityView: View {
                     }
 
                 VStack(alignment: .leading, spacing: 16) {
+                    if isEnrolledInBatch {
+                        lockedAvailabilityNotice
+                    }
+
                     WeeklyAvailabilityEditor(
                         appState: appState,
-                        isLocked: isEnrolledInBatch,
+                        isLocked: isLocked,
                         gridHeight: gridHeight(
                             for: proxy.size.height,
                             bottomSafeArea: proxy.safeAreaInsets.bottom
@@ -885,9 +910,34 @@ private struct WeeklyBatchAvailabilityView: View {
         )
     }
 
+    private var lockedAvailabilityNotice: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "lock.fill")
+                .foregroundStyle(.secondary)
+
+            Text(lockedAvailabilityNoticeText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .accessibilityIdentifier("Next Week Availability Notice")
+    }
+
+    private var lockedAvailabilityNoticeText: String {
+        if hasMatchThisWeek {
+            return "Your meeting time this week has been arranged. Changes here apply to next week's batch."
+        }
+
+        return "This week's availability is locked. Changes here apply to next week's batch."
+    }
+
     private func gridHeight(for containerHeight: CGFloat, bottomSafeArea: CGFloat) -> CGFloat {
         let tabBarClearance: CGFloat = 96
-        let reservedHeight = 130 + max(bottomSafeArea, tabBarClearance)
+        let noticeClearance: CGFloat = isEnrolledInBatch ? 80 : 0
+        let reservedHeight = 130 + noticeClearance + max(bottomSafeArea, tabBarClearance)
         return min(max(containerHeight - reservedHeight, 360), 620)
     }
 }
