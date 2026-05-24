@@ -736,6 +736,7 @@ private struct MemberComposerSearchRow: View {
                 placeholder: selectedMembers.isEmpty ? "Search contacts" : "",
                 text: $searchText,
                 isFocused: $isSearchFocused,
+                hidesCaret: selectedMemberID != nil,
                 onBackspaceWhenEmpty: handleBackspaceWhenEmpty,
                 onTextEntry: clearSelectedMember
             )
@@ -796,6 +797,7 @@ private struct BackspaceAwareTextField: UIViewRepresentable {
     let placeholder: String
     @Binding var text: String
     @Binding var isFocused: Bool
+    let hidesCaret: Bool
     let onBackspaceWhenEmpty: () -> Void
     let onTextEntry: () -> Void
 
@@ -818,6 +820,7 @@ private struct BackspaceAwareTextField: UIViewRepresentable {
         context.coordinator.parent = self
         uiView.onBackspaceWhenEmpty = onBackspaceWhenEmpty
         uiView.placeholder = placeholder
+        uiView.hidesCaret = hidesCaret
 
         if uiView.text != text {
             uiView.text = text
@@ -866,6 +869,16 @@ private struct BackspaceAwareTextField: UIViewRepresentable {
 
     final class BackspaceTextField: UITextField {
         var onBackspaceWhenEmpty: (() -> Void)?
+        var hidesCaret = false {
+            didSet {
+                guard oldValue != hidesCaret else { return }
+                setNeedsDisplay()
+            }
+        }
+
+        override func caretRect(for position: UITextPosition) -> CGRect {
+            hidesCaret ? .zero : super.caretRect(for: position)
+        }
 
         override func deleteBackward() {
             if text?.isEmpty ?? true {
