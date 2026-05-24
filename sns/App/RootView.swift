@@ -13,6 +13,7 @@ struct RootView: View {
     @State private var hasClearedAvailabilityForCurrentMatch = false
     @State private var availabilityVisibleStartIndex = 5
     @State private var availabilityTopMinute = (16 * 60) + 30
+    @State private var availabilityReferenceDate = Date()
 
     var body: some View {
         TabView(selection: Binding(
@@ -340,6 +341,7 @@ struct RootView: View {
                 appState: appState,
                 isEnrolledInBatch: isEnrolledInBatch,
                 hasMatchThisWeek: homeViewModel.hasMatchThisWeek,
+                referenceDate: availabilityReferenceDate,
                 visibleStartIndex: $availabilityVisibleStartIndex,
                 topVisibleMinute: $availabilityTopMinute
             )
@@ -376,9 +378,15 @@ struct RootView: View {
 
         appState.advanceAvailabilityToNextBatch()
         homeViewModel.advanceToNextBatchAfterMatch()
+        availabilityReferenceDate = nextAvailabilityReferenceDate()
         availabilityVisibleStartIndex = 5
         availabilityTopMinute = (16 * 60) + 30
         hasClearedAvailabilityForCurrentMatch = true
+    }
+
+    private func nextAvailabilityReferenceDate() -> Date {
+        let calendar = WeeklyAvailabilityCalendar.configuredCalendar()
+        return calendar.date(byAdding: .day, value: 7, to: availabilityReferenceDate) ?? Date()
     }
 
     @ViewBuilder
@@ -890,6 +898,7 @@ private struct WeeklyBatchAvailabilityView: View {
     @Bindable var appState: AppState
     let isEnrolledInBatch: Bool
     let hasMatchThisWeek: Bool
+    let referenceDate: Date
     @Binding var visibleStartIndex: Int
     @Binding var topVisibleMinute: Int
     @State private var activeWindowID: AvailabilityWindow.ID?
@@ -916,6 +925,7 @@ private struct WeeklyBatchAvailabilityView: View {
                     WeeklyAvailabilityEditor(
                         appState: appState,
                         isLocked: isLocked,
+                        referenceDate: referenceDate,
                         gridHeight: gridHeight(
                             for: proxy.size.height,
                             bottomSafeArea: proxy.safeAreaInsets.bottom
@@ -1455,6 +1465,7 @@ private struct CompactIntervalTimePicker: UIViewRepresentable {
 private struct WeeklyAvailabilityEditor: View {
     @Bindable var appState: AppState
     let isLocked: Bool
+    let referenceDate: Date
     let gridHeight: CGFloat
     @Binding var activeWindowID: AvailabilityWindow.ID?
     @Binding var visibleStartIndex: Int
@@ -1468,7 +1479,7 @@ private struct WeeklyAvailabilityEditor: View {
     }
 
     private var weekDates: [Date] {
-        WeeklyAvailabilityCalendar.nextWeekDates(calendar: calendar)
+        WeeklyAvailabilityCalendar.nextWeekDates(containing: referenceDate, calendar: calendar)
     }
 
     private var visibleDates: [Date] {
@@ -1510,6 +1521,7 @@ private struct WeeklyAvailabilityEditor: View {
             WeeklyAvailabilityGrid(
                 appState: appState,
                 isLocked: isLocked,
+                weekDates: weekDates,
                 visibleStartIndex: visibleStartIndex,
                 visibleDayCount: visibleDayCount,
                 visibleDates: visibleDates,
@@ -1564,6 +1576,7 @@ private struct AvailabilityEditButtonPlacement {
 private struct WeeklyAvailabilityGrid: View {
     @Bindable var appState: AppState
     let isLocked: Bool
+    let weekDates: [Date]
     let visibleStartIndex: Int
     let visibleDayCount: Int
     let visibleDates: [Date]
@@ -1615,10 +1628,6 @@ private struct WeeklyAvailabilityGrid: View {
         WeeklyAvailabilityCalendar.configuredCalendar()
     }
 
-    private var weekDates: [Date] {
-        WeeklyAvailabilityCalendar.nextWeekDates(calendar: calendar)
-    }
-
     private var contentHeight: CGFloat {
         CGFloat(WeeklyAvailabilityGridRules.endMinute - WeeklyAvailabilityGridRules.startMinute) / 60 * hourHeight
     }
@@ -1638,6 +1647,7 @@ private struct WeeklyAvailabilityGrid: View {
     init(
         appState: AppState,
         isLocked: Bool,
+        weekDates: [Date],
         visibleStartIndex: Int,
         visibleDayCount: Int,
         visibleDates: [Date],
@@ -1650,6 +1660,7 @@ private struct WeeklyAvailabilityGrid: View {
     ) {
         self.appState = appState
         self.isLocked = isLocked
+        self.weekDates = weekDates
         self.visibleStartIndex = visibleStartIndex
         self.visibleDayCount = visibleDayCount
         self.visibleDates = visibleDates
