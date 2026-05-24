@@ -4,6 +4,7 @@ import Observation
 struct AnonymousMatchProfile: Hashable {
     var firstName: String
     var lastName: String
+    var nickname: String
     var pronouns: PronounOption
     var gender: GenderIdentity
     var sexuality: SexualityOption
@@ -13,10 +14,11 @@ struct AnonymousMatchProfile: Hashable {
     }
 
     static let mock = AnonymousMatchProfile(
-        firstName: "Hannah",
-        lastName: "Miller",
-        pronouns: .theyThem,
-        gender: .female,
+        firstName: "Robert",
+        lastName: "Brown",
+        nickname: "Bob",
+        pronouns: .heHim,
+        gender: .male,
         sexuality: .straight
     )
 }
@@ -30,7 +32,7 @@ final class HomeViewModel {
     var showEnrollConfirmation = false
     var showMatchInfoSheet = false
     var sliderResetTrigger = 0
-    var secondsUntilMatchRelease = 5
+    var secondsUntilMatchRelease = 60
 
     let matchProfile = AnonymousMatchProfile.mock
 
@@ -65,7 +67,7 @@ final class HomeViewModel {
 
     private func beginMatchSimulation() {
         cancelMatchSimulation()
-        secondsUntilMatchRelease = 5
+        secondsUntilMatchRelease = 60
 
         matchTimerTask = Task { [weak self] in
             guard let self else { return }

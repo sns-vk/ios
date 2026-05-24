@@ -367,8 +367,8 @@ enum SharingDisclosureState: Equatable {
     var summary: String {
         switch self {
         case .notShared: "Not shared"
-        case .matched: "Match + contact"
-        case .contact: "Contact only"
+        case .matched: "Match"
+        case .contact: "Contact"
         }
     }
 }

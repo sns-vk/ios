@@ -512,19 +512,28 @@ final class AppState {
     }
 
     static func mock() -> AppState {
-        AppState(
+        var matchReleaseFields: Set<ProfileDisclosureField> = [
+            .firstName,
+            .nickname,
+            .gender,
+            .pronouns
+        ]
+        matchReleaseFields.formUnion(SubstanceUseCategory.allCases.map { ProfileDisclosureField.substanceUse($0) })
+        let contactExchangeFields: Set<ProfileDisclosureField> = matchReleaseFields.union([.lastName])
+
+        return AppState(
             myCard: {
-                var card = AppContact(name: "Kevin Jin")
-                card.nickname = "KEVWJIN"
+                var card = AppContact(name: "Allison Anderson")
+                card.nickname = "Alice"
                 return card
             }(),
             contacts: MockData.contacts,
             groups: MockData.groups,
-            gender: .male,
-            pronouns: .heHim,
+            gender: .female,
+            pronouns: .sheHer,
             sexuality: .straight,
-            sharedContactFields: [],
-            sharedProfileFields: []
+            sharedContactFields: contactExchangeFields,
+            sharedProfileFields: matchReleaseFields
         )
     }
 
