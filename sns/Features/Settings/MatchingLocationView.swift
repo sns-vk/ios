@@ -31,7 +31,7 @@ struct MatchingLocationView: View {
             } header: {
                 Text("Matching Location")
             } footer: {
-                Text("Matching uses neighborhood-level location.")
+                Text("Matching uses neighborhood-level precision.")
             }
 
             if let selectedSuggestion {

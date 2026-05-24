@@ -475,12 +475,12 @@ final class AppState {
         preferredGenders: Set<GenderIdentity> = Set(GenderIdentity.allCases),
         preferredSexualities: Set<SexualityOption> = Set(SexualityOption.allCases),
         acceptedSubstanceUse: [SubstanceUseCategory: SubstanceUseAnswer] = Dictionary(
-            uniqueKeysWithValues: SubstanceUseCategory.allCases.map { ($0, .yes) }
+            uniqueKeysWithValues: SubstanceUseCategory.allCases.map { ($0, .no) }
         ),
-        preferredAgeMin: Int = 21,
+        preferredAgeMin: Int = 22,
         preferredAgeMax: Int = 27,
         matchPolicy: MatchPolicy = .mutualsOnly,
-        matchingLocation: String = "SoMa",
+        matchingLocation: String = "South Beach",
         matchingRadiusMiles: Int = 10,
         extendRadiusIfNeeded: Bool = false,
         matchCriteriaUpdatedAt: Date = Date(),
