@@ -332,7 +332,7 @@ struct RootView: View {
         case .matchCriteria:
             MatchCriteriaView(
                 appState: appState,
-                isEnrolledInBatch: isEnrolledInBatch || homeViewModel.hasMatchThisWeek,
+                isEnrolledInBatch: isEnrolledInBatch,
                 hasMatchThisWeek: homeViewModel.hasMatchThisWeek
             )
         case .weeklyBatchAvailability:
@@ -574,17 +574,15 @@ private struct MatchProfileView: View {
                 .listRowSeparator(.hidden)
 
             Section("Meeting") {
-                matchDetailRow(title: "Date", value: "Thursday, May 21", systemImage: "calendar")
-                matchDetailRow(title: "Time", value: "3:00 PM–3:30 PM", systemImage: "clock")
+                matchDetailRow(title: "Date", value: "Saturday, May 23", systemImage: "calendar")
+                matchDetailRow(title: "Time", value: "10:00 AM–10:30 AM", systemImage: "clock")
                 matchDetailRow(title: "Address", value: "Hayes Cafe Mock Spot", systemImage: "mappin.and.ellipse")
             }
 
             Section("Profile") {
-                matchDetailRow(title: "First Name", value: profile.firstName, systemImage: "person.text.rectangle")
-                matchDetailRow(title: "Last Name", value: profile.lastName, systemImage: "person.text.rectangle")
+                matchDetailRow(title: "Nickname", value: profile.nickname, systemImage: "quote.bubble")
                 matchDetailRow(title: "Pronouns", value: profile.pronouns.label, systemImage: "text.bubble")
                 matchDetailRow(title: "Gender", value: profile.gender.label, systemImage: "person.fill")
-                matchDetailRow(title: "Sexuality", value: profile.sexuality.label, systemImage: "heart.circle")
             }
         }
         .navigationTitle("Meet Your Match")
@@ -634,14 +632,18 @@ private struct MatchCriteriaView: View {
     let isEnrolledInBatch: Bool
     let hasMatchThisWeek: Bool
 
+    private var isLocked: Bool {
+        isEnrolledInBatch && !hasMatchThisWeek
+    }
+
     var body: some View {
         List {
-            if isEnrolledInBatch {
+            if isLocked {
                 Section {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "lock.fill")
                             .foregroundStyle(.secondary)
-                        Text(criteriaNoticeText)
+                        Text("You can make changes for the next batch once your match is released.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -650,37 +652,55 @@ private struct MatchCriteriaView: View {
             }
 
             Section("Location") {
-                NavigationLink(value: RootDestination.page(.location)) {
-                    valueRow(title: "Location", value: appState.matchingLocation, systemImage: "location.fill")
-                }
-                .accessibilityIdentifier("Location Row")
+                criteriaRow(
+                    destination: .page(.location),
+                    title: "Location",
+                    value: appState.matchingLocation,
+                    systemImage: "location.fill",
+                    accessibilityIdentifier: "Location Row"
+                )
 
-                NavigationLink(value: RootDestination.page(.radius)) {
-                    valueRow(title: "Maximum Radius", value: "\(appState.matchingRadiusMiles) mi", systemImage: "scope")
-                }
-                .accessibilityIdentifier("Radius Row")
+                criteriaRow(
+                    destination: .page(.radius),
+                    title: "Maximum Radius",
+                    value: "\(appState.matchingRadiusMiles) mi",
+                    systemImage: "scope",
+                    accessibilityIdentifier: "Radius Row"
+                )
             }
 
             Section("Demographics") {
-                NavigationLink(value: RootDestination.page(.ageRange)) {
-                    valueRow(title: "Age Range", value: appState.currentMatchCriteriaSnapshot.ageRangeSummary, systemImage: "number")
-                }
-                .accessibilityIdentifier("Age Range Row")
+                criteriaRow(
+                    destination: .page(.ageRange),
+                    title: "Age Range",
+                    value: appState.currentMatchCriteriaSnapshot.ageRangeSummary,
+                    systemImage: "number",
+                    accessibilityIdentifier: "Age Range Row"
+                )
 
-                NavigationLink(value: RootDestination.page(.matchWith)) {
-                    valueRow(title: "Gender", value: appState.preferredGendersSummary, systemImage: "person.fill")
-                }
-                .accessibilityIdentifier("Criteria Gender Row")
+                criteriaRow(
+                    destination: .page(.matchWith),
+                    title: "Gender",
+                    value: appState.preferredGendersSummary,
+                    systemImage: "person.fill",
+                    accessibilityIdentifier: "Criteria Gender Row"
+                )
 
-                NavigationLink(value: RootDestination.page(.sexuality)) {
-                    valueRow(title: "Sexuality", value: appState.preferredSexualitiesSummary, systemImage: "heart.circle")
-                }
-                .accessibilityIdentifier("Criteria Sexuality Row")
+                criteriaRow(
+                    destination: .page(.sexuality),
+                    title: "Sexuality",
+                    value: appState.preferredSexualitiesSummary,
+                    systemImage: "heart.circle",
+                    accessibilityIdentifier: "Criteria Sexuality Row"
+                )
 
-                NavigationLink(value: RootDestination.page(.matchPolicy)) {
-                    valueRow(title: "Match Policy", value: appState.matchPolicy.label, systemImage: "checkmark.shield.fill")
-                }
-                .accessibilityIdentifier("Match Policy Row")
+                criteriaRow(
+                    destination: .page(.matchPolicy),
+                    title: "Match Policy",
+                    value: appState.matchPolicy.label,
+                    systemImage: "checkmark.shield.fill",
+                    accessibilityIdentifier: "Match Policy Row"
+                )
             }
 
             Section("Substance Use") {
@@ -693,14 +713,6 @@ private struct MatchCriteriaView: View {
         .navigationTitle("Match Criteria")
         .navigationBarTitleDisplayMode(.inline)
         .listStyle(.insetGrouped)
-    }
-
-    private var criteriaNoticeText: String {
-        if hasMatchThisWeek {
-            return "Changes here apply to next week's batch."
-        }
-
-        return "This week's criteria are locked. Changes here apply to next week's batch."
     }
 
     private func valueRow(title: String, value: String, systemImage: String) -> some View {
@@ -717,19 +729,37 @@ private struct MatchCriteriaView: View {
         }
     }
 
+    @ViewBuilder
+    private func criteriaRow(
+        destination: RootDestination,
+        title: String,
+        value: String,
+        systemImage: String,
+        accessibilityIdentifier: String
+    ) -> some View {
+        if isLocked {
+            valueRow(title: title, value: value, systemImage: systemImage)
+                .accessibilityIdentifier(accessibilityIdentifier)
+        } else {
+            NavigationLink(value: destination) {
+                valueRow(title: title, value: value, systemImage: systemImage)
+            }
+            .accessibilityIdentifier(accessibilityIdentifier)
+        }
+    }
+
     private func substanceUseRows(
         selection: [SubstanceUseCategory: SubstanceUseAnswer],
         accessibilityPrefix: String
     ) -> some View {
         ForEach(Array(SubstanceUseCategory.allCases), id: \.self) { substance in
-            NavigationLink(value: RootDestination.matchSubstanceUse(substance)) {
-                valueRow(
-                    title: substance.label,
-                    value: selection[substance, default: .yes].label,
-                    systemImage: substance.systemImage
-                )
-            }
-            .accessibilityIdentifier("\(accessibilityPrefix) \(substance.label) Substance Use Row")
+            criteriaRow(
+                destination: .matchSubstanceUse(substance),
+                title: substance.label,
+                value: selection[substance, default: .yes].label,
+                systemImage: substance.systemImage,
+                accessibilityIdentifier: "\(accessibilityPrefix) \(substance.label) Substance Use Row"
+            )
         }
     }
 }
@@ -953,22 +983,18 @@ private struct WeeklyBatchAvailabilityView: View {
     }
 
     private var lockedAvailabilityNoticeText: String {
-        if hasMatchThisWeek {
-            return "Changes here apply to next week's batch."
-        }
-
-        return "This week's availability is locked. Changes here apply to next week's batch."
+        "You can make changes for the next batch once your match is released."
     }
 
     private func gridHeight(for containerHeight: CGFloat, bottomSafeArea: CGFloat) -> CGFloat {
         let tabBarClearance: CGFloat = 96
-        let noticeClearance: CGFloat = shouldShowAvailabilityNotice ? 80 : 0
+        let noticeClearance: CGFloat = isLocked ? 80 : 0
         let reservedHeight = 130 + noticeClearance + max(bottomSafeArea, tabBarClearance)
         return min(max(containerHeight - reservedHeight, 360), 620)
     }
 
     private var shouldShowAvailabilityNotice: Bool {
-        isEnrolledInBatch || hasMatchThisWeek
+        isLocked
     }
 }
 
@@ -1561,7 +1587,6 @@ private struct WeeklyAvailabilityGrid: View {
     @State private var horizontalDragOffset: CGFloat = 0
     @State private var isWindowGestureActive = false
     @State private var didWindowGestureLeaveGrid = false
-    @State private var didHorizontalDateGestureLeaveBounds = false
     @State private var selectorVisibleStartIndex: Int
     @State private var pendingHorizontalSnap: DispatchWorkItem?
 
@@ -1658,7 +1683,8 @@ private struct WeeklyAvailabilityGrid: View {
                                     y: 0,
                                     width: geometry.size.width,
                                     height: headerHeight + gridViewportHeight
-                                )
+                                ),
+                                ignoresAvailabilityWindows: true
                             )
                         )
                         .simultaneousGesture(clearActiveWindowGesture)
@@ -1991,6 +2017,10 @@ private struct WeeklyAvailabilityGrid: View {
 
     private func dayStrip(dayWidth: CGFloat, dayStripWidth: CGFloat, height: CGFloat, stripOffsetX: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(Color.clear)
+                .contentShape(Rectangle())
+
             columnSeparators(dayWidth: dayWidth, height: height, dayCount: weekDates.count)
             AvailabilityCreationGestureOverlay(
                 dates: weekDates,
@@ -2113,7 +2143,7 @@ private struct WeeklyAvailabilityGrid: View {
             guard !isLocked else { return }
             activeWindowID = window.id
         }
-        .allowsHitTesting(!isCreating)
+        .allowsHitTesting(!isLocked && !isCreating)
         .zIndex(isActive ? 2 : isCreating ? 1.5 : 1)
     }
 
@@ -2234,7 +2264,11 @@ private struct WeeklyAvailabilityGrid: View {
         }
     }
 
-    private func horizontalDateDragGesture(dayWidth: CGFloat, bounds: CGRect) -> some Gesture {
+    private func horizontalDateDragGesture(
+        dayWidth: CGFloat,
+        bounds: CGRect,
+        ignoresAvailabilityWindows: Bool = false
+    ) -> some Gesture {
         DragGesture(minimumDistance: 28)
             .onChanged { value in
                 pendingHorizontalSnap?.cancel()
@@ -2245,11 +2279,15 @@ private struct WeeklyAvailabilityGrid: View {
                     return
                 }
 
-                guard updateHorizontalDateGestureBounds(for: value.location, in: bounds) else {
+                guard isHorizontalDateGestureStartInsideBounds(value.startLocation, in: bounds) else {
                     return
                 }
 
-                guard isHorizontalDateDrag(value, dayWidth: dayWidth) else {
+                guard isHorizontalDateDrag(
+                    value,
+                    dayWidth: dayWidth,
+                    ignoresAvailabilityWindows: ignoresAvailabilityWindows
+                ) else {
                     horizontalDragOffset = 0
                     return
                 }
@@ -2259,27 +2297,25 @@ private struct WeeklyAvailabilityGrid: View {
             .onEnded { value in
                 guard !isAvailabilityInteractionActive else {
                     horizontalDragOffset = 0
-                    resetHorizontalDateGestureState()
                     return
                 }
 
-                guard isHorizontalDateDrag(value, dayWidth: dayWidth) else {
+                guard isHorizontalDateDrag(
+                    value,
+                    dayWidth: dayWidth,
+                    ignoresAvailabilityWindows: ignoresAvailabilityWindows
+                ) else {
                     horizontalDragOffset = 0
-                    resetHorizontalDateGestureState()
                     return
                 }
 
-                let effectiveTranslation = didHorizontalDateGestureLeaveBounds
-                    ? horizontalDragOffset
-                    : value.translation.width
-                let proposedDayOffset = Int(round(-effectiveTranslation / dayWidth))
+                let proposedDayOffset = Int(round(-value.translation.width / dayWidth))
                 let targetStartIndex = boundedVisibleStartIndex(visibleStartIndex + proposedDayOffset)
                 let dayOffset = targetStartIndex - visibleStartIndex
                 guard dayOffset != 0 else {
                     withAnimation(.easeOut(duration: horizontalSnapDuration)) {
                         horizontalDragOffset = 0
                     }
-                    resetHorizontalDateGestureState()
                     return
                 }
 
@@ -2299,27 +2335,19 @@ private struct WeeklyAvailabilityGrid: View {
                 }
                 pendingHorizontalSnap = snapWorkItem
                 DispatchQueue.main.asyncAfter(deadline: .now() + horizontalSnapDuration, execute: snapWorkItem)
-                resetHorizontalDateGestureState()
             }
     }
 
-    private func updateHorizontalDateGestureBounds(for location: CGPoint, in bounds: CGRect) -> Bool {
-        guard !didHorizontalDateGestureLeaveBounds else { return false }
-
-        guard bounds.contains(location) else {
-            didHorizontalDateGestureLeaveBounds = true
-            return false
-        }
-
-        return true
+    private func isHorizontalDateGestureStartInsideBounds(_ location: CGPoint, in bounds: CGRect) -> Bool {
+        bounds.contains(location)
     }
 
-    private func resetHorizontalDateGestureState() {
-        didHorizontalDateGestureLeaveBounds = false
-    }
-
-    private func isHorizontalDateDrag(_ value: DragGesture.Value, dayWidth: CGFloat) -> Bool {
-        guard !startsOnAvailabilityWindow(value.startLocation, dayWidth: dayWidth) else {
+    private func isHorizontalDateDrag(
+        _ value: DragGesture.Value,
+        dayWidth: CGFloat,
+        ignoresAvailabilityWindows: Bool
+    ) -> Bool {
+        guard ignoresAvailabilityWindows || !startsOnAvailabilityWindow(value.startLocation, dayWidth: dayWidth) else {
             return false
         }
 
@@ -2901,13 +2929,15 @@ private struct AvailabilityScrollViewObserver: UIViewRepresentable {
             guard let scrollView else { return }
 
             switch recognizer.state {
-            case .began, .changed:
+            case .began:
                 guard isInsideVisibleGridPanBounds(recognizer.location(in: scrollView), in: scrollView) else {
                     cancelPan(recognizer, in: scrollView)
                     return
                 }
 
                 isTrackingUserScroll = true
+            case .changed:
+                break
             case .ended:
                 guard isTrackingUserScroll else { return }
                 finishUserScrollWhenSettled(in: scrollView)
