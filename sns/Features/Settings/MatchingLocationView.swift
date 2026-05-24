@@ -31,7 +31,7 @@ struct MatchingLocationView: View {
             } header: {
                 Text("Matching Location")
             } footer: {
-                Text("Matching uses neighborhood-level location, not your exact address.")
+                Text("Matching uses neighborhood-level location.")
             }
 
             if let selectedSuggestion {
@@ -43,7 +43,7 @@ struct MatchingLocationView: View {
                 } header: {
                     Text("Neighborhood Preview")
                 } footer: {
-                    Text("The map is a non-interactive preview of the matching neighborhood.")
+                    Text("The map is a non-interactive preview.")
                 }
             }
 

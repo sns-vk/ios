@@ -32,7 +32,7 @@ struct LocationSuggestion: Identifiable, Hashable {
     }
 
     var neighborhoodMappingDescription: String {
-        "Maps to \(neighborhoodName)"
+        "Neighborhood: \(neighborhoodName)"
     }
 
     func matches(_ query: String) -> Bool {
