@@ -615,7 +615,8 @@ struct MatchSubstanceUsePreferenceView: View {
     var body: some View {
         SubstanceUseAnswerView(
             title: category.label,
-            selection: $selection
+            selection: $selection,
+            indicatorStyle: .radio
         )
     }
 }
@@ -691,7 +692,7 @@ struct MatchPolicyView: View {
                             Text(policy.label)
                                 .foregroundStyle(.primary)
                             Spacer()
-                            StaticCheckmark(isVisible: matchPolicy == policy)
+                            RadioSelectionIndicator(isSelected: matchPolicy == policy)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
