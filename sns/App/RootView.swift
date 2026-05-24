@@ -43,6 +43,7 @@ struct RootView: View {
                             .toolbar(.visible, for: .navigationBar)
                     }
                 }
+                .background(InteractivePopGestureDisabler(isDisabled: router.matchPath.last == .weeklyBatchAvailability))
             }
 
             Tab("Profile", systemImage: RootTab.profile.systemImage, value: RootTab.profile) {
@@ -903,6 +904,7 @@ private struct WeeklyBatchAvailabilityView: View {
     @Binding var topVisibleMinute: Int
     @State private var activeWindowID: AvailabilityWindow.ID?
     @State private var editingWindowContext: AvailabilityWindowEditContext?
+    @Environment(\.dismiss) private var dismiss
 
     private var isLocked: Bool {
         isEnrolledInBatch && !hasMatchThisWeek
@@ -943,7 +945,18 @@ private struct WeeklyBatchAvailabilityView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Availability")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.title3.weight(.semibold))
+                }
+                .accessibilityLabel("Back")
+            }
+
             ToolbarItem(placement: .principal) {
                 Text("Availability")
                     .font(.headline)
@@ -1598,6 +1611,8 @@ private struct WeeklyAvailabilityGrid: View {
     @State private var creatingDirection: AvailabilityCreationDirection?
     @State private var scrollOffsetY: CGFloat = 0
     @State private var horizontalDragOffset: CGFloat = 0
+    @State private var horizontalDragLastSample: AvailabilityHorizontalDragSample?
+    @State private var horizontalDragVelocityX: CGFloat = 0
     @State private var isWindowGestureActive = false
     @State private var didWindowGestureLeaveGrid = false
     @State private var selectorVisibleStartIndex: Int
@@ -1619,6 +1634,7 @@ private struct WeeklyAvailabilityGrid: View {
     private let editButtonSize: CGFloat = 32
     private let horizontalSnapDuration: TimeInterval = 0.22
     private let snapSettleDuration: TimeInterval = 0.18
+    private let horizontalFastDecelerationRate: CGFloat = 0.99
     private let horizontalRubberBandResistance: CGFloat = 0.55
     private let activeColor = Color.accentColor
     private let gridLineColor = Color(red: 0.88, green: 0.88, blue: 0.9)
@@ -1675,7 +1691,7 @@ private struct WeeklyAvailabilityGrid: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let dayViewportWidth = geometry.size.width - timeLabelWidth
+            let dayViewportWidth = max(geometry.size.width - timeLabelWidth, 0)
             let dayWidth = max(dayViewportWidth / CGFloat(visibleDayCount), 96)
             let gridViewportHeight = max(visibleGridHeight - gridBottomPadding, 0)
             let stripOffsetX = horizontalStripOffset(dayWidth: dayWidth)
@@ -1789,7 +1805,7 @@ private struct WeeklyAvailabilityGrid: View {
                 }
             }
         }
-        .frame(height: weekSelectorHeight + headerHeight + visibleGridHeight)
+        .frame(height: weekSelectorHeight + headerHeight + max(visibleGridHeight, 0))
         .contentShape(Rectangle())
         .onAppear {
             selectorVisibleStartIndex = visibleStartIndex
@@ -2286,11 +2302,13 @@ private struct WeeklyAvailabilityGrid: View {
                 pendingHorizontalSnap = nil
 
                 guard !isAvailabilityInteractionActive else {
+                    resetHorizontalDragTracking()
                     horizontalDragOffset = 0
                     return
                 }
 
                 guard isHorizontalDateGestureStartInsideBounds(value.startLocation, in: bounds) else {
+                    resetHorizontalDragTracking()
                     return
                 }
 
@@ -2299,13 +2317,19 @@ private struct WeeklyAvailabilityGrid: View {
                     dayWidth: dayWidth,
                     ignoresAvailabilityWindows: ignoresAvailabilityWindows
                 ) else {
+                    resetHorizontalDragTracking()
                     horizontalDragOffset = 0
                     return
                 }
 
+                updateHorizontalDragVelocity(with: value)
                 horizontalDragOffset = boundedHorizontalDrag(value.translation.width, dayWidth: dayWidth)
             }
             .onEnded { value in
+                defer {
+                    resetHorizontalDragTracking()
+                }
+
                 guard !isAvailabilityInteractionActive else {
                     horizontalDragOffset = 0
                     return
@@ -2320,9 +2344,11 @@ private struct WeeklyAvailabilityGrid: View {
                     return
                 }
 
-                let proposedDayOffset = Int(round(-value.translation.width / dayWidth))
+                let projectedTranslation = projectedHorizontalTranslation(from: value)
+                let proposedDayOffset = Int(round(-projectedTranslation / dayWidth))
                 let targetStartIndex = boundedVisibleStartIndex(visibleStartIndex + proposedDayOffset)
                 let dayOffset = targetStartIndex - visibleStartIndex
+                let settleDuration = horizontalSettleDuration(forDayOffset: dayOffset)
                 guard dayOffset != 0 else {
                     withAnimation(.easeOut(duration: horizontalSnapDuration)) {
                         horizontalDragOffset = 0
@@ -2330,7 +2356,7 @@ private struct WeeklyAvailabilityGrid: View {
                     return
                 }
 
-                withAnimation(.easeOut(duration: horizontalSnapDuration)) {
+                withAnimation(horizontalSettleAnimation(forDayOffset: dayOffset)) {
                     horizontalDragOffset = boundedHorizontalDrag(-CGFloat(dayOffset) * dayWidth, dayWidth: dayWidth)
                 }
 
@@ -2345,7 +2371,7 @@ private struct WeeklyAvailabilityGrid: View {
                     pendingHorizontalSnap = nil
                 }
                 pendingHorizontalSnap = snapWorkItem
-                DispatchQueue.main.asyncAfter(deadline: .now() + horizontalSnapDuration, execute: snapWorkItem)
+                DispatchQueue.main.asyncAfter(deadline: .now() + settleDuration, execute: snapWorkItem)
             }
     }
 
@@ -2382,6 +2408,54 @@ private struct WeeklyAvailabilityGrid: View {
         return appState.availabilityMinuteWindows(on: date, calendar: calendar).contains { window in
             contentY >= minuteY(window.startMinute) && contentY <= minuteY(window.endMinute)
         }
+    }
+
+    private func updateHorizontalDragVelocity(with value: DragGesture.Value) {
+        let timestamp = value.time.timeIntervalSinceReferenceDate
+        if let lastSample = horizontalDragLastSample {
+            let elapsed = timestamp - lastSample.timestamp
+            if elapsed > 0 {
+                horizontalDragVelocityX = (value.translation.width - lastSample.translationX) / elapsed
+            }
+        }
+
+        horizontalDragLastSample = AvailabilityHorizontalDragSample(
+            timestamp: timestamp,
+            translationX: value.translation.width
+        )
+    }
+
+    private func resetHorizontalDragTracking() {
+        horizontalDragLastSample = nil
+        horizontalDragVelocityX = 0
+    }
+
+    private func projectedHorizontalTranslation(from value: DragGesture.Value) -> CGFloat {
+        let velocityX = horizontalDragVelocityX
+        guard velocityX.isFinite else {
+            return value.translation.width
+        }
+
+        let decayDistance = (velocityX / 1000)
+            * horizontalFastDecelerationRate
+            / (1 - horizontalFastDecelerationRate)
+        let projectedTranslation = value.translation.width + decayDistance
+        return projectedTranslation.isFinite ? projectedTranslation : value.translation.width
+    }
+
+    private func horizontalSettleDuration(forDayOffset dayOffset: Int) -> TimeInterval {
+        let distance = max(abs(dayOffset), 1)
+        return min(horizontalSnapDuration + (TimeInterval(distance - 1) * 0.04), 0.42)
+    }
+
+    private func horizontalSettleAnimation(forDayOffset dayOffset: Int) -> Animation {
+        .timingCurve(
+            0.12,
+            0.82,
+            0.18,
+            1,
+            duration: horizontalSettleDuration(forDayOffset: dayOffset)
+        )
     }
 
     private func horizontalStripOffset(dayWidth: CGFloat) -> CGFloat {
@@ -2860,6 +2934,99 @@ private struct AvailabilityNoPressFeedbackButtonStyle: ButtonStyle {
     }
 }
 
+private struct AvailabilityHorizontalDragSample {
+    let timestamp: TimeInterval
+    let translationX: CGFloat
+}
+
+private struct InteractivePopGestureDisabler: UIViewRepresentable {
+    let isDisabled: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+        context.coordinator.update(isDisabled: isDisabled, from: view)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.update(isDisabled: isDisabled, from: uiView)
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        coordinator.restoreInteractivePopIfNeeded()
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        private weak var activeNavigationController: UINavigationController?
+        private weak var activeGestureRecognizer: UIGestureRecognizer?
+        private weak var previousDelegate: UIGestureRecognizerDelegate?
+        private var previousIsEnabled: Bool?
+
+        deinit {
+            restoreInteractivePopIfNeeded()
+        }
+
+        func update(isDisabled: Bool, from view: UIView) {
+            guard isDisabled else {
+                restoreInteractivePopIfNeeded()
+                return
+            }
+
+            DispatchQueue.main.async { [weak self, weak view] in
+                guard let self,
+                      let view,
+                      let navigationController = view.enclosingViewController?.navigationController else {
+                    return
+                }
+
+                self.disableInteractivePop(in: navigationController)
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak navigationController] in
+                    guard let self, let navigationController else { return }
+                    self.disableInteractivePop(in: navigationController)
+                }
+            }
+        }
+
+        private func disableInteractivePop(in navigationController: UINavigationController) {
+            if activeNavigationController !== navigationController {
+                restoreInteractivePopIfNeeded()
+                activeNavigationController = navigationController
+
+                if let gestureRecognizer = navigationController.interactivePopGestureRecognizer {
+                    activeGestureRecognizer = gestureRecognizer
+                    previousIsEnabled = gestureRecognizer.isEnabled
+                    previousDelegate = gestureRecognizer.delegate
+                    gestureRecognizer.delegate = self
+                }
+            }
+
+            navigationController.interactivePopGestureRecognizer?.isEnabled = false
+        }
+
+        func restoreInteractivePopIfNeeded() {
+            guard let activeGestureRecognizer, let previousIsEnabled else { return }
+
+            activeGestureRecognizer.delegate = previousDelegate
+            activeGestureRecognizer.isEnabled = previousIsEnabled
+            self.activeNavigationController = nil
+            self.activeGestureRecognizer = nil
+            self.previousDelegate = nil
+            self.previousIsEnabled = nil
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            gestureRecognizer !== activeGestureRecognizer
+        }
+    }
+}
+
 private struct AvailabilityScrollViewObserver: UIViewRepresentable {
     let topInset: CGFloat
     let panBoundaryMinX: CGFloat
@@ -3005,6 +3172,19 @@ private struct AvailabilityScrollViewObserver: UIViewRepresentable {
 }
 
 private extension UIView {
+    var enclosingViewController: UIViewController? {
+        var responder: UIResponder? = self
+        while let currentResponder = responder {
+            if let viewController = currentResponder as? UIViewController {
+                return viewController
+            }
+
+            responder = currentResponder.next
+        }
+
+        return nil
+    }
+
     var enclosingScrollView: UIScrollView? {
         var view = superview
         while let currentView = view {
