@@ -1566,7 +1566,24 @@ private struct WeeklyAvailabilityEditor: View {
         let nextIndex = min(max(index, 0), maxStartIndex)
         guard nextIndex != visibleStartIndex else { return }
 
+        if !activeWindowIsVisible(startingAt: nextIndex) {
+            clearActiveWindow()
+        }
+
         visibleStartIndex = nextIndex
+    }
+
+    private func activeWindowIsVisible(startingAt startIndex: Int) -> Bool {
+        guard let activeWindowID else { return false }
+
+        let endIndex = min(startIndex + visibleDayCount, weekDates.count)
+        guard startIndex < endIndex else { return false }
+
+        return weekDates[startIndex..<endIndex].contains { date in
+            appState.availabilityWindows(on: date, calendar: calendar).contains { window in
+                window.id == activeWindowID
+            }
+        }
     }
 
     private func clearActiveWindow() {
