@@ -903,6 +903,7 @@ private struct WeeklyBatchAvailabilityView: View {
     @Binding var visibleStartIndex: Int
     @Binding var topVisibleMinute: Int
     @State private var activeWindowID: AvailabilityWindow.ID?
+    @State private var visibleActiveWindowID: AvailabilityWindow.ID?
     @State private var editingWindowContext: AvailabilityWindowEditContext?
     @Environment(\.dismiss) private var dismiss
 
@@ -916,7 +917,7 @@ private struct WeeklyBatchAvailabilityView: View {
                 Color(.systemGroupedBackground)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        activeWindowID = nil
+                        clearActiveWindow()
                     }
 
                 VStack(alignment: .leading, spacing: 16) {
@@ -933,6 +934,7 @@ private struct WeeklyBatchAvailabilityView: View {
                             bottomSafeArea: proxy.safeAreaInsets.bottom
                         ),
                         activeWindowID: $activeWindowID,
+                        visibleActiveWindowID: $visibleActiveWindowID,
                         visibleStartIndex: $visibleStartIndex,
                         topVisibleMinute: $topVisibleMinute,
                         onEditWindow: editWindow
@@ -963,7 +965,7 @@ private struct WeeklyBatchAvailabilityView: View {
                     .frame(minWidth: 180, minHeight: 44)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        activeWindowID = nil
+                        clearActiveWindow()
                     }
             }
         }
@@ -977,6 +979,26 @@ private struct WeeklyBatchAvailabilityView: View {
             .presentationDragIndicator(.visible)
         }
         .onDisappear {
+            clearActiveWindow(animated: false)
+        }
+    }
+
+    private func clearActiveWindow(animated: Bool = true) {
+        guard activeWindowID != nil || visibleActiveWindowID != nil else { return }
+
+        guard animated else {
+            activeWindowID = nil
+            visibleActiveWindowID = nil
+            return
+        }
+
+        let clearingWindowID = activeWindowID
+        withAnimation(.easeOut(duration: 0.18)) {
+            visibleActiveWindowID = nil
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            guard activeWindowID == clearingWindowID, visibleActiveWindowID == nil else { return }
             activeWindowID = nil
         }
     }
@@ -1481,6 +1503,7 @@ private struct WeeklyAvailabilityEditor: View {
     let referenceDate: Date
     let gridHeight: CGFloat
     @Binding var activeWindowID: AvailabilityWindow.ID?
+    @Binding var visibleActiveWindowID: AvailabilityWindow.ID?
     @Binding var visibleStartIndex: Int
     @Binding var topVisibleMinute: Int
     let onEditWindow: (AvailabilityWindow, Date) -> Void
@@ -1540,6 +1563,7 @@ private struct WeeklyAvailabilityEditor: View {
                 visibleDates: visibleDates,
                 visibleGridHeight: gridHeight,
                 activeWindowID: $activeWindowID,
+                visibleActiveWindowID: $visibleActiveWindowID,
                 topVisibleMinute: $topVisibleMinute,
                 onShiftVisibleDates: shiftVisibleDates,
                 onSelectVisibleStartIndex: selectVisibleStartIndex,
@@ -1555,6 +1579,9 @@ private struct WeeklyAvailabilityEditor: View {
                 clearActiveWindow()
             }
         }
+        .onChange(of: activeWindowID) { _, _ in
+            syncVisibleActiveWindow(startingAt: visibleStartIndex)
+        }
     }
 
     private func shiftVisibleDates(by offset: Int) {
@@ -1565,10 +1592,6 @@ private struct WeeklyAvailabilityEditor: View {
         let maxStartIndex = max(0, weekDates.count - visibleDayCount)
         let nextIndex = min(max(index, 0), maxStartIndex)
         guard nextIndex != visibleStartIndex else { return }
-
-        if !activeWindowIsVisible(startingAt: nextIndex) {
-            clearActiveWindow()
-        }
 
         visibleStartIndex = nextIndex
     }
@@ -1587,7 +1610,38 @@ private struct WeeklyAvailabilityEditor: View {
     }
 
     private func clearActiveWindow() {
-        activeWindowID = nil
+        guard activeWindowID != nil || visibleActiveWindowID != nil else { return }
+
+        var transaction = Transaction(animation: .easeOut(duration: 0.18))
+        transaction.disablesAnimations = false
+        withTransaction(transaction) {
+            visibleActiveWindowID = nil
+        }
+
+        let clearingWindowID = activeWindowID
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            guard activeWindowID == clearingWindowID, visibleActiveWindowID == nil else { return }
+            activeWindowID = nil
+        }
+    }
+
+    private func syncVisibleActiveWindow(startingAt startIndex: Int) {
+        guard let activeWindowID else {
+            setVisibleActiveWindow(nil)
+            return
+        }
+
+        setVisibleActiveWindow(activeWindowIsVisible(startingAt: startIndex) ? activeWindowID : nil)
+    }
+
+    private func setVisibleActiveWindow(_ id: AvailabilityWindow.ID?) {
+        guard visibleActiveWindowID != id else { return }
+
+        var transaction = Transaction(animation: .easeOut(duration: 0.18))
+        transaction.disablesAnimations = false
+        withTransaction(transaction) {
+            visibleActiveWindowID = id
+        }
     }
 }
 
@@ -1617,6 +1671,7 @@ private struct WeeklyAvailabilityGrid: View {
     let visibleDates: [Date]
     let visibleGridHeight: CGFloat
     @Binding var activeWindowID: AvailabilityWindow.ID?
+    @Binding var visibleActiveWindowID: AvailabilityWindow.ID?
     @Binding var topVisibleMinute: Int
     let onShiftVisibleDates: (Int) -> Void
     let onSelectVisibleStartIndex: (Int) -> Void
@@ -1638,6 +1693,10 @@ private struct WeeklyAvailabilityGrid: View {
     @State private var isWindowGestureActive = false
     @State private var didWindowGestureLeaveGrid = false
     @State private var selectorVisibleStartIndex: Int
+    @State private var pendingVisibleActiveWindowSyncID: UUID?
+    @State private var displayedGutterBoundaryMinutes: [Int] = []
+    @State private var gutterBoundaryLabelsOpacity: Double = 0
+    @State private var pendingGutterBoundaryClearID: UUID?
 
     private let timeLabelWidth: CGFloat = 50
     private let hourHeight: CGFloat = 56
@@ -1701,6 +1760,7 @@ private struct WeeklyAvailabilityGrid: View {
         visibleDates: [Date],
         visibleGridHeight: CGFloat,
         activeWindowID: Binding<AvailabilityWindow.ID?>,
+        visibleActiveWindowID: Binding<AvailabilityWindow.ID?>,
         topVisibleMinute: Binding<Int>,
         onShiftVisibleDates: @escaping (Int) -> Void,
         onSelectVisibleStartIndex: @escaping (Int) -> Void,
@@ -1714,6 +1774,7 @@ private struct WeeklyAvailabilityGrid: View {
         self.visibleDates = visibleDates
         self.visibleGridHeight = visibleGridHeight
         self._activeWindowID = activeWindowID
+        self._visibleActiveWindowID = visibleActiveWindowID
         self._topVisibleMinute = topVisibleMinute
         self.onShiftVisibleDates = onShiftVisibleDates
         self.onSelectVisibleStartIndex = onSelectVisibleStartIndex
@@ -1856,10 +1917,14 @@ private struct WeeklyAvailabilityGrid: View {
         .contentShape(Rectangle())
         .onAppear {
             selectorVisibleStartIndex = visibleStartIndex
+            syncDisplayedGutterBoundaryLabels(activeGutterBoundaryMinutes)
         }
         .onChange(of: visibleStartIndex) { _, newValue in
             guard selectorVisibleStartIndex != newValue else { return }
             animateSelector(to: newValue)
+        }
+        .onChange(of: activeGutterBoundaryMinutes) { _, newValue in
+            syncDisplayedGutterBoundaryLabels(newValue)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Weekly Availability Grid")
@@ -2048,17 +2113,13 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private func activeGutterBoundaryLabels() -> some View {
-        Group {
-            if let activeGutterTransitionID {
-                ForEach(activeGutterBoundaryMinutes, id: \.self) { minute in
-                    gutterBoundaryLabel(forMinute: minute)
-                }
-                .id(activeGutterTransitionID)
-                .transition(.opacity)
+        ZStack(alignment: .topLeading) {
+            ForEach(displayedGutterBoundaryMinutes, id: \.self) { minute in
+                gutterBoundaryLabel(forMinute: minute)
             }
         }
+        .opacity(gutterBoundaryLabelsOpacity)
         .allowsHitTesting(false)
-        .animation(.easeOut(duration: snapSettleDuration), value: activeGutterTransitionID)
     }
 
     private func gutterBoundaryLabel(forMinute minute: Int) -> some View {
@@ -2091,19 +2152,15 @@ private struct WeeklyAvailabilityGrid: View {
         ])).sorted()
     }
 
-    private var activeGutterTransitionID: UUID? {
-        creatingPreviewWindow?.id ?? activeWindowID
-    }
-
     private var activeGutterMinuteWindow: AvailabilityMinuteWindow? {
         if let creatingPreviewWindow {
             return labelMinuteWindow(for: creatingPreviewWindow)
         }
 
-        guard let activeWindowID else { return nil }
+        guard let visibleActiveWindowID else { return nil }
 
-        for date in visibleDates {
-            for window in appState.availabilityWindows(on: date, calendar: calendar) where window.id == activeWindowID {
+        for date in weekDates {
+            for window in appState.availabilityWindows(on: date, calendar: calendar) where window.id == visibleActiveWindowID {
                 let minuteWindow = minuteWindow(for: window, on: date)
                 return labelMinuteWindow(for: displayMinuteWindow(for: minuteWindow))
             }
@@ -2177,11 +2234,11 @@ private struct WeeklyAvailabilityGrid: View {
                 visibleContentMaxY: scrollOffsetY + visibleGridHeight,
                 isEnabled: !isLocked,
                 onTap: {
-                    activeWindowID = nil
+                    clearActiveWindow()
                 },
                 onChanged: { date, id, anchorY, currentY in
                     if creatingWindowID != id {
-                        activeWindowID = nil
+                        clearActiveWindow()
                         creatingDirection = nil
                     }
                     isWindowGestureActive = true
@@ -2265,7 +2322,7 @@ private struct WeeklyAvailabilityGrid: View {
     ) -> some View {
         let displayMinuteWindow = displayMinuteWindow(for: minuteWindow)
         let labelWindow = availabilityWindow(for: labelMinuteWindow(for: displayMinuteWindow), on: date)
-        let isActive = !isLocked && !isCreating && activeWindowID == window.id
+        let isActive = !isLocked && !isCreating && visibleActiveWindowID == window.id
         let windowHeight = max(minuteHeight(displayMinuteWindow.endMinute - displayMinuteWindow.startMinute), 28)
         let visualWindowHeight = max(windowHeight - (slotVerticalVisualInset * 2), 1)
 
@@ -2294,9 +2351,11 @@ private struct WeeklyAvailabilityGrid: View {
 
     private func selectActiveWindow(_ id: AvailabilityWindow.ID) {
         guard !isLocked else { return }
+        pendingVisibleActiveWindowSyncID = nil
 
         withAnimation(.easeOut(duration: snapSettleDuration)) {
             activeWindowID = id
+            visibleActiveWindowID = id
         }
     }
 
@@ -2364,10 +2423,10 @@ private struct WeeklyAvailabilityGrid: View {
         height: CGFloat,
         stripOffsetX: CGFloat
     ) -> AvailabilityWindowControlsPlacement? {
-        guard let activeWindowID, !isLocked else { return nil }
+        guard let visibleActiveWindowID, !isLocked else { return nil }
 
         for (dayIndex, date) in weekDates.enumerated() {
-            for window in appState.availabilityWindows(on: date, calendar: calendar) where window.id == activeWindowID {
+            for window in appState.availabilityWindows(on: date, calendar: calendar) where window.id == visibleActiveWindowID {
                 let minuteWindow = minuteWindow(for: window, on: date)
                 let displayMinuteWindow = displayMinuteWindow(for: minuteWindow)
                 let slotWidth = slotWidth(for: dayWidth)
@@ -2454,6 +2513,7 @@ private struct WeeklyAvailabilityGrid: View {
             selectorVisibleStartIndex = targetStartIndex
             horizontalDragOffset = 0
         }
+        scheduleVisibleActiveWindowSync(startingAt: targetStartIndex, after: horizontalSnapDuration)
     }
 
     private func horizontalDateDragGesture(
@@ -2506,14 +2566,18 @@ private struct WeeklyAvailabilityGrid: View {
                 let proposedDayOffset = release.proposedDayOffset
                 let targetStartIndex = boundedVisibleStartIndex(visibleStartIndex + proposedDayOffset)
                 let dayOffset = targetStartIndex - visibleStartIndex
+                let settleDuration = horizontalSettleDuration(
+                    forDayOffset: dayOffset,
+                    dayWidth: dayWidth,
+                    isFlick: release.isFlick
+                )
+                let settleAnimation = horizontalSettleAnimation(
+                    forDayOffset: dayOffset,
+                    dayWidth: dayWidth,
+                    isFlick: release.isFlick
+                )
                 guard dayOffset != 0 else {
-                    withAnimation(
-                        horizontalSettleAnimation(
-                            forDayOffset: dayOffset,
-                            dayWidth: dayWidth,
-                            isFlick: release.isFlick
-                        )
-                    ) {
+                    withAnimation(settleAnimation) {
                         horizontalDragOffset = 0
                     }
                     return
@@ -2527,16 +2591,11 @@ private struct WeeklyAvailabilityGrid: View {
                     onSelectVisibleStartIndex(targetStartIndex)
                 }
 
-                withAnimation(
-                    horizontalSettleAnimation(
-                        forDayOffset: dayOffset,
-                        dayWidth: dayWidth,
-                        isFlick: release.isFlick
-                    )
-                ) {
+                withAnimation(settleAnimation) {
                     selectorVisibleStartIndex = targetStartIndex
                     horizontalDragOffset = 0
                 }
+                scheduleVisibleActiveWindowSync(startingAt: targetStartIndex, after: settleDuration)
             }
     }
 
@@ -2706,8 +2765,93 @@ private struct WeeklyAvailabilityGrid: View {
         TapGesture()
             .onEnded {
                 guard !isLocked else { return }
-                activeWindowID = nil
+                clearActiveWindow()
             }
+    }
+
+    private func clearActiveWindow() {
+        guard activeWindowID != nil || visibleActiveWindowID != nil else { return }
+        pendingVisibleActiveWindowSyncID = nil
+        let clearingWindowID = activeWindowID
+
+        withAnimation(.easeOut(duration: snapSettleDuration)) {
+            visibleActiveWindowID = nil
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + snapSettleDuration) {
+            guard activeWindowID == clearingWindowID, visibleActiveWindowID == nil else { return }
+            activeWindowID = nil
+        }
+    }
+
+    private func scheduleVisibleActiveWindowSync(startingAt startIndex: Int, after delay: TimeInterval) {
+        let syncID = UUID()
+        pendingVisibleActiveWindowSyncID = syncID
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard pendingVisibleActiveWindowSyncID == syncID else { return }
+            pendingVisibleActiveWindowSyncID = nil
+            syncVisibleActiveWindow(startingAt: startIndex)
+        }
+    }
+
+    private func syncVisibleActiveWindow(startingAt startIndex: Int) {
+        guard let activeWindowID else {
+            setVisibleActiveWindow(nil)
+            return
+        }
+
+        setVisibleActiveWindow(activeWindowIsVisible(startingAt: startIndex) ? activeWindowID : nil)
+    }
+
+    private func setVisibleActiveWindow(_ id: AvailabilityWindow.ID?) {
+        guard visibleActiveWindowID != id else { return }
+
+        withAnimation(.easeOut(duration: snapSettleDuration)) {
+            visibleActiveWindowID = id
+        }
+    }
+
+    private func syncDisplayedGutterBoundaryLabels(_ minutes: [Int]) {
+        if minutes.isEmpty {
+            fadeOutDisplayedGutterBoundaryLabels()
+            return
+        }
+
+        pendingGutterBoundaryClearID = nil
+        displayedGutterBoundaryMinutes = minutes
+        withAnimation(.easeOut(duration: snapSettleDuration)) {
+            gutterBoundaryLabelsOpacity = 1
+        }
+    }
+
+    private func fadeOutDisplayedGutterBoundaryLabels() {
+        guard !displayedGutterBoundaryMinutes.isEmpty || gutterBoundaryLabelsOpacity > 0 else { return }
+
+        let clearID = UUID()
+        pendingGutterBoundaryClearID = clearID
+        withAnimation(.easeOut(duration: snapSettleDuration)) {
+            gutterBoundaryLabelsOpacity = 0
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + snapSettleDuration) {
+            guard pendingGutterBoundaryClearID == clearID else { return }
+            pendingGutterBoundaryClearID = nil
+            displayedGutterBoundaryMinutes = []
+        }
+    }
+
+    private func activeWindowIsVisible(startingAt startIndex: Int) -> Bool {
+        guard let activeWindowID else { return false }
+
+        let endIndex = min(startIndex + visibleDayCount, weekDates.count)
+        guard startIndex < endIndex else { return false }
+
+        return weekDates[startIndex..<endIndex].contains { date in
+            appState.availabilityWindows(on: date, calendar: calendar).contains { window in
+                window.id == activeWindowID
+            }
+        }
     }
 
     private func moveGesture(for minuteWindow: AvailabilityMinuteWindow, on date: Date, dayWidth: CGFloat) -> some Gesture {
@@ -2716,7 +2860,9 @@ private struct WeeklyAvailabilityGrid: View {
                 guard !isLocked else { return }
                 guard movingOriginalWindow != nil || isVerticalWindowDrag(value) else { return }
 
+                pendingVisibleActiveWindowSyncID = nil
                 activeWindowID = minuteWindow.id
+                visibleActiveWindowID = minuteWindow.id
                 isWindowGestureActive = true
                 guard updateWindowGestureBounds(for: value.location, dayWidth: dayWidth) else { return }
 
@@ -2766,7 +2912,9 @@ private struct WeeklyAvailabilityGrid: View {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(contentCoordinateSpace))
             .onChanged { value in
                 guard !isLocked else { return }
+                pendingVisibleActiveWindowSyncID = nil
                 activeWindowID = minuteWindow.id
+                visibleActiveWindowID = minuteWindow.id
                 isWindowGestureActive = true
                 guard updateWindowGestureBounds(for: value.location, dayWidth: dayWidth) else { return }
 
@@ -2805,7 +2953,9 @@ private struct WeeklyAvailabilityGrid: View {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(contentCoordinateSpace))
             .onChanged { value in
                 guard !isLocked else { return }
+                pendingVisibleActiveWindowSyncID = nil
                 activeWindowID = minuteWindow.id
+                visibleActiveWindowID = minuteWindow.id
                 isWindowGestureActive = true
                 guard updateWindowGestureBounds(for: value.location, dayWidth: dayWidth) else { return }
 
@@ -2950,8 +3100,10 @@ private struct WeeklyAvailabilityGrid: View {
         }
 
         let snappedWindow = minuteWindow(for: savedWindow, on: date)
+        pendingVisibleActiveWindowSyncID = nil
         withAnimation(.easeOut(duration: snapSettleDuration)) {
             activeWindowID = savedWindow.id
+            visibleActiveWindowID = savedWindow.id
             creatingWindowID = nil
             creatingPreviewWindow = snappedWindow
         }
