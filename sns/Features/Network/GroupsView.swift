@@ -483,6 +483,7 @@ struct GroupFormView: View {
     @State private var groupName = ""
     @State private var selectedContactIDs: [AppContact.ID] = []
     @State private var memberSearchText = ""
+    @State private var isMemberSearchFocused = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var photoData: Data?
 
@@ -518,22 +519,12 @@ struct GroupFormView: View {
         }
     }
 
+    private var selectedContactIDSet: Set<AppContact.ID> {
+        Set(selectedContactIDs)
+    }
+
     private var canCreate: Bool {
         !trimmedGroupName.isEmpty || !selectedContactIDs.isEmpty
-    }
-
-    private var filteredContacts: [AppContact] {
-        guard isSearchingMembers else { return [] }
-
-        return contactsMatching(memberSearchText, in: availableContacts)
-    }
-
-    private var isSearchingMembers: Bool {
-        !memberSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var shouldShowMemberOptions: Bool {
-        isSearchingMembers
     }
 
     var body: some View {
@@ -547,6 +538,44 @@ struct GroupFormView: View {
     }
 
     private var formContent: some View {
+        Group {
+            if isMemberSearchFocused {
+                memberSearchContent
+            } else {
+                standardFormContent
+            }
+        }
+        .transaction { transaction in
+            transaction.disablesAnimations = true
+        }
+        .navigationTitle(isMemberSearchFocused ? "" : navigationTitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(isMemberSearchFocused)
+        .onChange(of: selectedPhoto) { _, newPhoto in
+            Task {
+                photoData = try? await newPhoto?.loadTransferable(type: Data.self)
+            }
+        }
+        .toolbar(isMemberSearchFocused ? .hidden : .visible, for: .navigationBar)
+        .toolbar {
+            if !isMemberSearchFocused {
+                if showsCancelButton {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(confirmationTitle, action: saveGroup)
+                        .disabled(!canSave)
+                }
+            }
+        }
+    }
+
+    private var standardFormContent: some View {
         Form {
                 groupPhotoEditor
                     .listRowInsets(EdgeInsets())
@@ -564,71 +593,23 @@ struct GroupFormView: View {
                     MemberComposerSearchRow(
                         selectedMembers: selectedMembers,
                         searchText: $memberSearchText,
+                        isSearchFocused: $isMemberSearchFocused,
                         onRemoveMember: removeSelection
                     )
                 }
-
-                if shouldShowMemberOptions {
-                    Section {
-                        if availableContacts.isEmpty {
-                            Text("No contacts available.")
-                                .foregroundStyle(.secondary)
-                        } else if filteredContacts.isEmpty {
-                            Text("No contacts found")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(filteredContacts) { contact in
-                                Button {
-                                    toggleSelection(for: contact.id)
-                                } label: {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "person.crop.circle.fill")
-                                            .font(.title3)
-                                            .foregroundStyle(.secondary)
-
-                                        Text(contact.name)
-                                            .foregroundStyle(.primary)
-
-                                        Spacer()
-
-                                        Image(systemName: "checkmark")
-                                            .font(.headline.weight(.semibold))
-                                            .foregroundStyle(Color.accentColor)
-                                            .opacity(selectedContactIDs.contains(contact.id) ? 1 : 0)
-                                            .animation(nil, value: selectedContactIDs.contains(contact.id))
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    } header: {
-                        Text("Members")
-                    }
-                }
             }
-        .navigationTitle(navigationTitle)
-        .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: selectedPhoto) { _, newPhoto in
-            Task {
-                photoData = try? await newPhoto?.loadTransferable(type: Data.self)
-            }
-        }
-        .toolbar {
-            if showsCancelButton {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
+    }
 
-            ToolbarItem(placement: .confirmationAction) {
-                Button(confirmationTitle, action: saveGroup)
-                    .disabled(!canSave)
-            }
-        }
+    private var memberSearchContent: some View {
+        GroupMemberSearchSurface(
+            selectedMembers: selectedMembers,
+            availableContacts: availableContacts,
+            selectedContactIDs: selectedContactIDSet,
+            searchText: $memberSearchText,
+            isSearchFocused: $isMemberSearchFocused,
+            onToggleMember: toggleSelection,
+            onRemoveMember: removeSelection
+        )
     }
 
     private var groupPhotoEditor: some View {
@@ -698,6 +679,263 @@ struct GroupFormView: View {
     }
 }
 
+struct GroupDetailView: View {
+    @Binding var group: AppGroup
+    let availableContacts: [AppContact]
+
+    @State private var selectedPhoto: PhotosPickerItem?
+
+    var body: some View {
+        Form {
+            groupPhotoEditor
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+
+            Section("Group") {
+                NavigationLink {
+                    GroupNameEditorView(name: $group.name)
+                } label: {
+                    groupDetailRow(title: "Group Name", value: groupNameValue)
+                }
+
+                NavigationLink {
+                    GroupMemberListEditorView(members: $group.members, availableContacts: availableContacts)
+                } label: {
+                    groupDetailRow(title: "Member List", value: group.memberCountSummary)
+                }
+            }
+        }
+        .navigationTitle(group.displayTitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: selectedPhoto) { _, newPhoto in
+            Task {
+                group.photoData = try? await newPhoto?.loadTransferable(type: Data.self)
+            }
+        }
+    }
+
+    private var groupNameValue: String {
+        let trimmedName = group.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedName.isEmpty ? "None" : trimmedName
+    }
+
+    private var groupPhotoEditor: some View {
+        VStack(spacing: 12) {
+            ZStack(alignment: .topTrailing) {
+                GroupAvatar(name: group.displayTitle, photoData: group.photoData, size: 160)
+
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Image(systemName: "pencil")
+                        .font(.headline)
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 44, height: 44)
+                        .background(Color(.systemBackground), in: Circle())
+                        .overlay {
+                            Circle()
+                                .stroke(Color(.separator).opacity(0.45), lineWidth: 1)
+                        }
+                        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+                }
+                .buttonStyle(GroupNoPressFeedbackButtonStyle())
+                .offset(x: 2, y: -2)
+                .accessibilityIdentifier("Choose Group Photo")
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 18)
+        .padding(.bottom, 6)
+        .accessibilityIdentifier("Group Photo Editor")
+    }
+
+    private func groupDetailRow(title: String, value: String) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+
+            Spacer(minLength: 12)
+
+            Text(value)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+    }
+}
+
+private struct GroupNameEditorView: View {
+    @Binding var name: String
+
+    var body: some View {
+        Form {
+            Section("Group") {
+                TextField("Group name (optional)", text: $name)
+                    .textInputAutocapitalization(.words)
+                    .submitLabel(.done)
+            }
+        }
+        .navigationTitle("Group Name")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct GroupMemberListEditorView: View {
+    @Binding var members: [AppContact]
+    let availableContacts: [AppContact]
+
+    @State private var memberSearchText = ""
+    @State private var isMemberSearchFocused = false
+
+    private var selectedContactIDs: Set<AppContact.ID> {
+        Set(members.map(\.id))
+    }
+
+    var body: some View {
+        GroupMemberSearchSurface(
+            selectedMembers: members,
+            availableContacts: availableContacts,
+            selectedContactIDs: selectedContactIDs,
+            searchText: $memberSearchText,
+            isSearchFocused: $isMemberSearchFocused,
+            onToggleMember: toggleMember,
+            onRemoveMember: removeMember
+        )
+        .navigationTitle("Member List")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+    }
+
+    private func toggleMember(_ id: AppContact.ID) {
+        if let index = members.firstIndex(where: { $0.id == id }) {
+            members.remove(at: index)
+        } else if let contact = availableContacts.first(where: { $0.id == id }) {
+            members.append(contact)
+            memberSearchText = ""
+        }
+    }
+
+    private func removeMember(_ id: AppContact.ID) {
+        members.removeAll { $0.id == id }
+    }
+}
+
+private struct GroupMemberSearchSurface: View {
+    let selectedMembers: [AppContact]
+    let availableContacts: [AppContact]
+    let selectedContactIDs: Set<AppContact.ID>
+    @Binding var searchText: String
+    @Binding var isSearchFocused: Bool
+    let onToggleMember: (AppContact.ID) -> Void
+    let onRemoveMember: (AppContact.ID) -> Void
+
+    private var filteredContacts: [AppContact] {
+        guard isSearchingMembers else { return [] }
+
+        return contactsMatching(searchText, in: availableContacts)
+    }
+
+    private var isSearchingMembers: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        ZStack {
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    membersSection
+
+                    if isSearchingMembers {
+                        suggestionsSection
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 18)
+                .padding(.bottom, 24)
+            }
+            .scrollDismissesKeyboard(.never)
+        }
+    }
+
+    private var membersSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Members")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+
+            MemberComposerSearchRow(
+                selectedMembers: selectedMembers,
+                searchText: $searchText,
+                isSearchFocused: $isSearchFocused,
+                onRemoveMember: onRemoveMember
+            )
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        }
+    }
+
+    private var suggestionsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Contacts to Add")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+
+            VStack(spacing: 0) {
+                if availableContacts.isEmpty {
+                    Text("No contacts available")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 18)
+                } else if filteredContacts.isEmpty {
+                    Text("No contacts found")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 18)
+                } else {
+                    ForEach(Array(filteredContacts.enumerated()), id: \.element.id) { index, contact in
+                        Button {
+                            onToggleMember(contact.id)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Text(contact.name)
+                                    .foregroundStyle(.primary)
+
+                                Spacer()
+
+                                Image(systemName: "checkmark")
+                                    .font(.headline.weight(.semibold))
+                                    .foregroundStyle(Color.accentColor)
+                                    .opacity(selectedContactIDs.contains(contact.id) ? 1 : 0)
+                                    .animation(nil, value: selectedContactIDs.contains(contact.id))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 18)
+                        }
+                        .buttonStyle(.plain)
+
+                        if index < filteredContacts.count - 1 {
+                            Divider()
+                                .padding(.leading, 18)
+                        }
+                    }
+                }
+            }
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        }
+    }
+}
+
 private struct GroupNoPressFeedbackButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -707,8 +945,8 @@ private struct GroupNoPressFeedbackButtonStyle: ButtonStyle {
 private struct MemberComposerSearchRow: View {
     let selectedMembers: [AppContact]
     @Binding var searchText: String
+    @Binding var isSearchFocused: Bool
     let onRemoveMember: (AppContact.ID) -> Void
-    @State private var isSearchFocused = false
     @State private var selectedMemberID: AppContact.ID?
 
     var body: some View {
@@ -733,7 +971,7 @@ private struct MemberComposerSearchRow: View {
             }
 
             BackspaceAwareTextField(
-                placeholder: selectedMembers.isEmpty ? "Search contacts" : "",
+                placeholder: selectedMembers.isEmpty ? "Search contacts to add" : "",
                 text: $searchText,
                 isFocused: $isSearchFocused,
                 hidesCaret: selectedMemberID != nil,

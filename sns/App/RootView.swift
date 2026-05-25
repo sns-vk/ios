@@ -310,20 +310,7 @@ struct RootView: View {
             }
         case .group(let id):
             if let group = groupBinding(for: id) {
-                GroupFormView(
-                    navigationTitle: group.wrappedValue.displayTitle,
-                    confirmationTitle: "Save",
-                    availableContacts: appState.contacts,
-                    initialName: group.wrappedValue.name,
-                    initialMembers: group.wrappedValue.members,
-                    initialPhotoData: group.wrappedValue.photoData,
-                    wrapsInNavigationStack: false,
-                    showsCancelButton: false
-                ) { name, members, photoData in
-                    group.wrappedValue.name = name
-                    group.wrappedValue.members = members
-                    group.wrappedValue.photoData = photoData
-                }
+                GroupDetailView(group: group, availableContacts: appState.contacts)
             } else {
                 Text("Group unavailable")
             }
