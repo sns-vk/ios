@@ -1697,6 +1697,9 @@ private struct WeeklyAvailabilityGrid: View {
     @State private var displayedGutterBoundaryMinutes: [Int] = []
     @State private var gutterBoundaryLabelsOpacity: Double = 0
     @State private var pendingGutterBoundaryClearID: UUID?
+    @State private var displayedControlsWindowID: AvailabilityWindow.ID?
+    @State private var controlsOpacity: Double = 0
+    @State private var pendingControlsWindowClearID: UUID?
 
     private let timeLabelWidth: CGFloat = 50
     private let hourHeight: CGFloat = 56
@@ -1972,7 +1975,7 @@ private struct WeeklyAvailabilityGrid: View {
                             animateDaySelection(to: index, dayWidth: dayWidth)
                         } label: {
                             VStack(spacing: 6) {
-                                Text(date.formatted(.dateTime.weekday(.abbreviated)))
+                                Text(weekSelectorWeekdayLabel(for: date))
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.secondary)
 
@@ -2015,7 +2018,7 @@ private struct WeeklyAvailabilityGrid: View {
         HStack(spacing: 0) {
             ForEach(Array(weekDates.enumerated()), id: \.element) { _, date in
                 VStack(spacing: 6) {
-                    Text(date.formatted(.dateTime.weekday(.abbreviated)))
+                    Text(weekSelectorWeekdayLabel(for: date))
                         .font(.caption.weight(.semibold))
                         .hidden()
 
@@ -2084,7 +2087,11 @@ private struct WeeklyAvailabilityGrid: View {
     private func dayHeaderLabel(for date: Date) -> String {
         let month = calendar.component(.month, from: date)
         let day = calendar.component(.day, from: date)
-        return "\(date.formatted(.dateTime.weekday(.wide))) - \(month)/\(day)"
+        return "\(date.formatted(.dateTime.weekday(.abbreviated))) - \(month)/\(day)"
+    }
+
+    private func weekSelectorWeekdayLabel(for date: Date) -> String {
+        String(date.formatted(.dateTime.weekday(.abbreviated)).prefix(1))
     }
 
     private func gridLines(totalWidth: CGFloat) -> some View {
@@ -2377,56 +2384,82 @@ private struct WeeklyAvailabilityGrid: View {
         height: CGFloat,
         stripOffsetX: CGFloat
     ) -> some View {
-        if let placement = activeEditButtonPlacement(
+        let currentWindowID = visibleActiveWindowID
+        let displayedControlsPlacement = activeEditButtonPlacement(
+            for: displayedControlsWindowID,
             dayWidth: dayWidth,
             height: height,
             stripOffsetX: stripOffsetX
-        ) {
-            ZStack(alignment: .topLeading) {
-                Color.clear
-                    .allowsHitTesting(false)
+        )
 
-                availabilityResizeHandle(width: placement.handleWidth)
-                    .position(x: placement.handleX, y: placement.startY)
-                    .highPriorityGesture(
-                        resizeStartGesture(for: placement.minuteWindow, on: placement.date, dayWidth: dayWidth)
-                    )
-                    .accessibilityIdentifier("Availability Start Handle")
+        ZStack(alignment: .topLeading) {
+            Color.clear
+                .allowsHitTesting(false)
 
-                availabilityResizeHandle(width: placement.handleWidth)
-                    .position(x: placement.handleX, y: placement.endY)
-                    .highPriorityGesture(
-                        resizeEndGesture(for: placement.minuteWindow, on: placement.date, dayWidth: dayWidth)
-                    )
-                    .accessibilityIdentifier("Availability End Handle")
-
-                Button {
-                    onEditWindow(placement.window, placement.date)
-                } label: {
-                    editButtonChrome
-                }
-                .buttonStyle(AvailabilityNoPressFeedbackButtonStyle())
-                .frame(width: editButtonSize, height: editButtonSize)
-                .position(x: placement.editX, y: placement.editY)
-                .accessibilityAddTraits(.isButton)
-                .accessibilityLabel("Edit Selected Slot")
-                .accessibilityIdentifier("Edit Availability Window")
+            if let displayedControlsPlacement {
+                activeControlsContent(
+                    placement: displayedControlsPlacement,
+                    dayWidth: dayWidth
+                )
+                .opacity(controlsOpacity)
+                .allowsHitTesting(visibleActiveWindowID == displayedControlsPlacement.window.id)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .id(placement.window.id)
-            .transition(.opacity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .zIndex(10)
+        .onAppear {
+            syncDisplayedControlsWindow(currentWindowID)
+        }
+        .onChange(of: currentWindowID) { _, newValue in
+            syncDisplayedControlsWindow(newValue)
         }
     }
 
+    private func activeControlsContent(
+        placement: AvailabilityWindowControlsPlacement,
+        dayWidth: CGFloat
+    ) -> some View {
+        ZStack(alignment: .topLeading) {
+            availabilityResizeHandle(width: placement.handleWidth)
+                .position(x: placement.handleX, y: placement.startY)
+                .highPriorityGesture(
+                    resizeStartGesture(for: placement.minuteWindow, on: placement.date, dayWidth: dayWidth)
+                )
+                .accessibilityIdentifier("Availability Start Handle")
+
+            availabilityResizeHandle(width: placement.handleWidth)
+                .position(x: placement.handleX, y: placement.endY)
+                .highPriorityGesture(
+                    resizeEndGesture(for: placement.minuteWindow, on: placement.date, dayWidth: dayWidth)
+                )
+                .accessibilityIdentifier("Availability End Handle")
+
+            Button {
+                onEditWindow(placement.window, placement.date)
+            } label: {
+                editButtonChrome
+            }
+            .buttonStyle(AvailabilityNoPressFeedbackButtonStyle())
+            .frame(width: editButtonSize, height: editButtonSize)
+            .position(x: placement.editX, y: placement.editY)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("Edit Selected Slot")
+            .accessibilityIdentifier("Edit Availability Window")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .id(placement.window.id)
+    }
+
     private func activeEditButtonPlacement(
+        for windowID: AvailabilityWindow.ID?,
         dayWidth: CGFloat,
         height: CGFloat,
         stripOffsetX: CGFloat
     ) -> AvailabilityWindowControlsPlacement? {
-        guard let visibleActiveWindowID, !isLocked else { return nil }
+        guard let windowID, !isLocked else { return nil }
 
         for (dayIndex, date) in weekDates.enumerated() {
-            for window in appState.availabilityWindows(on: date, calendar: calendar) where window.id == visibleActiveWindowID {
+            for window in appState.availabilityWindows(on: date, calendar: calendar) where window.id == windowID {
                 let minuteWindow = minuteWindow(for: window, on: date)
                 let displayMinuteWindow = displayMinuteWindow(for: minuteWindow)
                 let slotWidth = slotWidth(for: dayWidth)
@@ -2838,6 +2871,35 @@ private struct WeeklyAvailabilityGrid: View {
             guard pendingGutterBoundaryClearID == clearID else { return }
             pendingGutterBoundaryClearID = nil
             displayedGutterBoundaryMinutes = []
+        }
+    }
+
+    private func syncDisplayedControlsWindow(_ id: AvailabilityWindow.ID?) {
+        guard let id else {
+            fadeOutDisplayedControlsWindow()
+            return
+        }
+
+        pendingControlsWindowClearID = nil
+        displayedControlsWindowID = id
+        withAnimation(.easeOut(duration: snapSettleDuration)) {
+            controlsOpacity = 1
+        }
+    }
+
+    private func fadeOutDisplayedControlsWindow() {
+        guard displayedControlsWindowID != nil || controlsOpacity > 0 else { return }
+
+        let clearID = UUID()
+        pendingControlsWindowClearID = clearID
+        withAnimation(.easeOut(duration: snapSettleDuration)) {
+            controlsOpacity = 0
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + snapSettleDuration) {
+            guard pendingControlsWindowClearID == clearID else { return }
+            pendingControlsWindowClearID = nil
+            displayedControlsWindowID = nil
         }
     }
 
