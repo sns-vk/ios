@@ -4174,6 +4174,13 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture>: View {
                     RoundedRectangle(cornerRadius: 5)
                         .stroke(activeColor, lineWidth: isActive ? 2 : 0)
                 )
+                .shadow(
+                    color: Color.black.opacity(isActive ? 0.18 : 0),
+                    radius: isActive ? 6 : 0,
+                    x: 0,
+                    y: isActive ? 3 : 0
+                )
+                .animation(.easeOut(duration: 0.18), value: isActive)
                 .contentShape(Rectangle())
                 .gesture(moveGesture)
         }
