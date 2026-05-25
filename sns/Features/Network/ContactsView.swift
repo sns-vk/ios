@@ -342,13 +342,66 @@ struct ContactDetailView: View {
 private struct ContactGroupsView: View {
     @Binding var contact: AppContact
     @Binding var groups: [AppGroup]
-    @State private var searchText = ""
 
     private var selectedGroupIndices: [Int] {
         groups.indices.filter { index in
-            isContactMember(of: groups[index])
+            groups[index].members.contains { $0.id == contact.id }
         }
     }
+
+    var body: some View {
+        Form {
+            Section("Groups") {
+                if selectedGroupIndices.isEmpty {
+                    Text("Not in any groups")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(selectedGroupIndices, id: \.self) { index in
+                        groupMembershipRow(for: groups[index])
+                    }
+                }
+            }
+        }
+        .navigationTitle("Groups")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                NavigationLink {
+                    ContactGroupSearchView(contact: $contact, groups: $groups)
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add Groups")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func groupMembershipRow(for group: AppGroup) -> some View {
+        HStack(spacing: 14) {
+            GroupAvatar(name: group.displayTitle, photoData: group.photoData, size: 44)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(group.displayTitle)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                Text(group.memberCountSummary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .lineLimit(1)
+
+            Spacer(minLength: 12)
+        }
+        .accessibilityIdentifier("Contact Group \(group.displayTitle)")
+    }
+}
+
+private struct ContactGroupSearchView: View {
+    @Binding var contact: AppContact
+    @Binding var groups: [AppGroup]
+    @State private var searchText = ""
 
     private var searchResults: [Int] {
         let trimmedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -361,17 +414,6 @@ private struct ContactGroupsView: View {
 
     var body: some View {
         Form {
-            Section("Selected") {
-                if selectedGroupIndices.isEmpty {
-                    Text("Not in any groups")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(selectedGroupIndices, id: \.self) { index in
-                        groupToggleRow(for: groups[index])
-                    }
-                }
-            }
-
             Section("Search") {
                 TextField("Search groups", text: $searchText)
                     .textInputAutocapitalization(.words)
@@ -391,7 +433,7 @@ private struct ContactGroupsView: View {
                 }
             }
         }
-        .navigationTitle("Groups")
+        .navigationTitle("Add Groups")
         .navigationBarTitleDisplayMode(.inline)
     }
 
