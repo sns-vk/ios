@@ -1648,10 +1648,11 @@ private struct WeeklyAvailabilityGrid: View {
     private let topScrollInset: CGFloat = 28
     private let initialTopMinute = (16 * 60) + 30
     private let slotLeadingInset: CGFloat = 5
-    private let slotTrailingControlInset: CGFloat = 22
+    private let slotTrailingControlInset: CGFloat = 20
     private let bottomDragSlop: CGFloat = 28
     private let gridBottomPadding: CGFloat = 0
     private let slotControlOverflow: CGFloat = 22
+    private let slotVerticalVisualInset: CGFloat = 1
     private let editButtonSize: CGFloat = 32
     private let horizontalSnapDuration: TimeInterval = 0.22
     private let snapSettleDuration: TimeInterval = 0.18
@@ -2035,14 +2036,38 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private func timeLabels() -> some View {
-        ForEach(Array(stride(from: 0, through: 24, by: 1)), id: \.self) { hour in
+        return ForEach(Array(stride(from: 0, through: 24, by: 1)), id: \.self) { hour in
+            let minute = hour * 60
+
             Text(timeLabel(for: hour))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: timeLabelWidth - 6, alignment: .trailing)
-                .offset(x: 0, y: minuteY(hour * 60) - 8)
+                .offset(x: 0, y: minuteY(minute) - 8)
         }
         .allowsHitTesting(false)
+    }
+
+    private func activeGutterBoundaryLabels() -> some View {
+        Group {
+            if let activeGutterTransitionID {
+                ForEach(activeGutterBoundaryMinutes, id: \.self) { minute in
+                    gutterBoundaryLabel(forMinute: minute)
+                }
+                .id(activeGutterTransitionID)
+                .transition(.opacity)
+            }
+        }
+        .allowsHitTesting(false)
+        .animation(.easeOut(duration: snapSettleDuration), value: activeGutterTransitionID)
+    }
+
+    private func gutterBoundaryLabel(forMinute minute: Int) -> some View {
+        Text(gutterBoundaryLabelText(forMinute: minute))
+            .font(.caption)
+            .foregroundStyle(activeColor)
+            .frame(width: timeLabelWidth - 6, alignment: .trailing)
+            .offset(x: 0, y: minuteY(minute) - 8)
     }
 
     private func timeGutterForeground(height: CGFloat) -> some View {
@@ -2054,8 +2079,38 @@ private struct WeeklyAvailabilityGrid: View {
             timeGutterSeparator(height: height)
 
             timeLabels()
+            activeGutterBoundaryLabels()
         }
         .allowsHitTesting(false)
+    }
+
+    private var activeGutterBoundaryMinutes: [Int] {
+        guard let minuteWindow = activeGutterMinuteWindow else { return [] }
+        return Array(Set([
+            minuteWindow.startMinute,
+            minuteWindow.endMinute
+        ])).sorted()
+    }
+
+    private var activeGutterTransitionID: UUID? {
+        creatingPreviewWindow?.id ?? activeWindowID
+    }
+
+    private var activeGutterMinuteWindow: AvailabilityMinuteWindow? {
+        if let creatingPreviewWindow {
+            return labelMinuteWindow(for: creatingPreviewWindow)
+        }
+
+        guard let activeWindowID else { return nil }
+
+        for date in visibleDates {
+            for window in appState.availabilityWindows(on: date, calendar: calendar) where window.id == activeWindowID {
+                let minuteWindow = minuteWindow(for: window, on: date)
+                return labelMinuteWindow(for: displayMinuteWindow(for: minuteWindow))
+            }
+        }
+
+        return nil
     }
 
     private func timeGutterHorizontalDragOverlay(
@@ -2214,6 +2269,7 @@ private struct WeeklyAvailabilityGrid: View {
         let labelWindow = availabilityWindow(for: labelMinuteWindow(for: displayMinuteWindow), on: date)
         let isActive = !isLocked && !isCreating && activeWindowID == window.id
         let windowHeight = max(minuteHeight(displayMinuteWindow.endMinute - displayMinuteWindow.startMinute), 28)
+        let visualWindowHeight = max(windowHeight - (slotVerticalVisualInset * 2), 1)
 
         return AvailabilityWindowBlock(
             window: labelWindow,
@@ -2222,17 +2278,28 @@ private struct WeeklyAvailabilityGrid: View {
             activeColor: activeColor,
             moveGesture: moveGesture(for: minuteWindow, on: date, dayWidth: dayWidth)
         )
-        .frame(width: slotWidth(for: dayWidth), height: windowHeight)
+        .frame(width: slotWidth(for: dayWidth), height: visualWindowHeight)
         .position(
             x: (CGFloat(dayIndex) * dayWidth) + slotLeadingInset + (slotWidth(for: dayWidth) / 2),
-            y: minuteY(displayMinuteWindow.startMinute) + (windowHeight / 2)
+            y: minuteY(displayMinuteWindow.startMinute) + slotVerticalVisualInset + (visualWindowHeight / 2)
         )
-        .onTapGesture {
-            guard !isLocked else { return }
-            activeWindowID = window.id
-        }
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.35, maximumDistance: 12)
+                .onEnded { _ in
+                    guard !isLocked else { return }
+                    selectActiveWindow(window.id)
+                }
+        )
         .allowsHitTesting(!isLocked && !isCreating)
         .zIndex(isActive || isCreating ? 2 : 1)
+    }
+
+    private func selectActiveWindow(_ id: AvailabilityWindow.ID) {
+        guard !isLocked else { return }
+
+        withAnimation(.easeOut(duration: snapSettleDuration)) {
+            activeWindowID = id
+        }
     }
 
     private func displayMinuteWindow(for minuteWindow: AvailabilityMinuteWindow) -> AvailabilityMinuteWindow {
@@ -3153,6 +3220,25 @@ private struct WeeklyAvailabilityGrid: View {
         CGFloat(minutes) / 60 * hourHeight
     }
 
+    private func gutterBoundaryLabelText(forMinute minute: Int) -> String {
+        let clampedMinute = boundedMinute(minute)
+
+        if clampedMinute % 60 == 0 {
+            return timeLabel(for: clampedMinute / 60)
+        }
+
+        return insertedTimeLabel(forMinute: clampedMinute)
+    }
+
+    private func insertedTimeLabel(forMinute minute: Int) -> String {
+        let clampedMinute = boundedMinute(minute)
+        let hour = clampedMinute == WeeklyAvailabilityGridRules.endMinute ? 0 : clampedMinute / 60
+        let minuteValue = clampedMinute % 60
+        let displayHour = hour % 12 == 0 ? 12 : hour % 12
+        let minuteText = minuteValue < 10 ? "0\(minuteValue)" : "\(minuteValue)"
+        return "\(displayHour):\(minuteText)"
+    }
+
     private func timeLabel(for hour: Int) -> String {
         switch hour {
         case 0, 24:
@@ -3663,14 +3749,6 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture>: View {
                 )
                 .contentShape(Rectangle())
                 .gesture(moveGesture)
-
-            Text("\(window.startTime.formatted(date: .omitted, time: .shortened))–\(window.endTime.formatted(date: .omitted, time: .shortened))")
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 6)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(isActive ? "Active Availability Window" : "Filled Availability Window")
