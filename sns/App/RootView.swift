@@ -1692,6 +1692,7 @@ private struct WeeklyAvailabilityGrid: View {
     @State private var horizontalDragVelocityX: CGFloat = 0
     @State private var isWindowGestureActive = false
     @State private var didWindowGestureLeaveGrid = false
+    @State private var activeWindowPressID: AvailabilityWindow.ID?
     @State private var selectorVisibleStartIndex: Int
     @State private var pendingVisibleActiveWindowSyncID: UUID?
     @State private var displayedGutterBoundaryMinutes: [Int] = []
@@ -2280,6 +2281,16 @@ private struct WeeklyAvailabilityGrid: View {
                 }
             )
             .frame(width: dayStripWidth, height: height)
+            AvailabilityWindowTouchLockOverlay(
+                isEnabled: !isLocked,
+                windowIDAtLocation: { location in
+                    windowID(at: location, dayWidth: dayWidth)
+                },
+                onTouchBegan: beginWindowActivationTouch,
+                onTouchEnded: endWindowActivationTouch
+            )
+            .frame(width: dayStripWidth, height: height)
+            .allowsHitTesting(false)
             availabilityWindows(dayWidth: dayWidth)
         }
         .frame(width: dayStripWidth, height: height, alignment: .topLeading)
@@ -2349,12 +2360,58 @@ private struct WeeklyAvailabilityGrid: View {
         .simultaneousGesture(
             LongPressGesture(minimumDuration: 0.35, maximumDistance: 12)
                 .onEnded { _ in
-                    guard !isLocked else { return }
+                    guard !isLocked,
+                          activeWindowPressID == window.id else { return }
                     selectActiveWindow(window.id)
                 }
         )
         .allowsHitTesting(!isLocked && !isCreating)
         .zIndex(isActive || isCreating ? 2 : 1)
+    }
+
+    private func windowID(at location: CGPoint, dayWidth: CGFloat) -> AvailabilityWindow.ID? {
+        guard dayWidth > 0 else { return nil }
+
+        let dayIndex = Int(floor(location.x / dayWidth))
+        guard weekDates.indices.contains(dayIndex) else { return nil }
+
+        let slotMinX = (CGFloat(dayIndex) * dayWidth) + slotLeadingInset
+        let slotMaxX = slotMinX + slotWidth(for: dayWidth)
+        guard location.x >= slotMinX, location.x <= slotMaxX else { return nil }
+
+        let date = weekDates[dayIndex]
+        for window in appState.availabilityWindows(on: date, calendar: calendar) {
+            let minuteWindow = minuteWindow(for: window, on: date)
+            let displayMinuteWindow = displayMinuteWindow(for: minuteWindow)
+            let windowHeight = max(
+                minuteHeight(displayMinuteWindow.endMinute - displayMinuteWindow.startMinute),
+                28
+            )
+            let visualWindowHeight = max(windowHeight - (slotVerticalVisualInset * 2), 1)
+            let minY = minuteY(displayMinuteWindow.startMinute) + slotVerticalVisualInset
+            let maxY = minY + visualWindowHeight
+
+            if location.y >= minY, location.y <= maxY {
+                return window.id
+            }
+        }
+
+        return nil
+    }
+
+    private func beginWindowActivationTouch(_ id: AvailabilityWindow.ID) -> Bool {
+        guard !isLocked,
+              activeWindowPressID == nil,
+              !isWindowGestureActive,
+              creatingWindowID == nil else { return false }
+
+        activeWindowPressID = id
+        return true
+    }
+
+    private func endWindowActivationTouch(_ id: AvailabilityWindow.ID) {
+        guard activeWindowPressID == id else { return }
+        activeWindowPressID = nil
     }
 
     private func selectActiveWindow(_ id: AvailabilityWindow.ID) {
@@ -3097,6 +3154,7 @@ private struct WeeklyAvailabilityGrid: View {
     private func resetWindowGestureState() {
         isWindowGestureActive = false
         didWindowGestureLeaveGrid = false
+        activeWindowPressID = nil
     }
 
     private func isInsideGridViewport(_ location: CGPoint, dayWidth: CGFloat) -> Bool {
@@ -3745,6 +3803,160 @@ private extension UIView {
         }
 
         return nil
+    }
+}
+
+private struct AvailabilityWindowTouchLockOverlay: UIViewRepresentable {
+    let isEnabled: Bool
+    let windowIDAtLocation: (CGPoint) -> AvailabilityWindow.ID?
+    let onTouchBegan: (AvailabilityWindow.ID) -> Bool
+    let onTouchEnded: (AvailabilityWindow.ID) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.parent = self
+        context.coordinator.coordinateView = uiView
+
+        DispatchQueue.main.async {
+            context.coordinator.installIfPossible()
+        }
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        coordinator.uninstall()
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: AvailabilityWindowTouchLockOverlay
+        weak var coordinateView: UIView?
+        private weak var installedView: UIView?
+        private var trackingWindowID: AvailabilityWindow.ID?
+        private lazy var recognizer: AvailabilityWindowTouchLockRecognizer = {
+            let recognizer = AvailabilityWindowTouchLockRecognizer(target: self, action: nil)
+            recognizer.cancelsTouchesInView = false
+            recognizer.delegate = self
+            recognizer.onTouchBegan = { [weak self] touch in
+                self?.beginTracking(touch) ?? false
+            }
+            recognizer.onTouchEnded = { [weak self] in
+                self?.endTracking()
+            }
+            return recognizer
+        }()
+
+        init(_ parent: AvailabilityWindowTouchLockOverlay) {
+            self.parent = parent
+        }
+
+        func installIfPossible() {
+            guard let window = coordinateView?.window else { return }
+            guard installedView !== window else { return }
+
+            uninstall()
+            window.addGestureRecognizer(recognizer)
+            installedView = window
+        }
+
+        func uninstall() {
+            installedView?.removeGestureRecognizer(recognizer)
+            installedView = nil
+            endTracking()
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard parent.isEnabled,
+                  let coordinateView,
+                  parent.windowIDAtLocation(touch.location(in: coordinateView)) != nil else {
+                return false
+            }
+
+            return true
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
+
+        private func beginTracking(_ touch: UITouch) -> Bool {
+            guard parent.isEnabled, let coordinateView else { return false }
+            guard let windowID = parent.windowIDAtLocation(touch.location(in: coordinateView)) else { return false }
+            guard parent.onTouchBegan(windowID) else { return false }
+
+            trackingWindowID = windowID
+            return true
+        }
+
+        private func endTracking() {
+            guard let trackingWindowID else { return }
+            parent.onTouchEnded(trackingWindowID)
+            self.trackingWindowID = nil
+        }
+    }
+}
+
+private final class AvailabilityWindowTouchLockRecognizer: UIGestureRecognizer {
+    var onTouchBegan: ((UITouch) -> Bool)?
+    var onTouchEnded: (() -> Void)?
+
+    private var trackedTouch: UITouch?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard trackedTouch == nil, let touch = touches.first else { return }
+        guard onTouchBegan?(touch) == true else {
+            state = .failed
+            return
+        }
+
+        trackedTouch = touch
+        state = .began
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard let trackedTouch,
+              touches.contains(where: { $0 === trackedTouch }),
+              state == .began || state == .changed else { return }
+        state = .changed
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard let trackedTouch,
+              touches.contains(where: { $0 === trackedTouch }) else { return }
+
+        onTouchEnded?()
+        state = .ended
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard let trackedTouch,
+              touches.contains(where: { $0 === trackedTouch }) else { return }
+
+        onTouchEnded?()
+        state = .cancelled
+    }
+
+    override func reset() {
+        trackedTouch = nil
+    }
+
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool {
+        false
+    }
+
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool {
+        false
     }
 }
 
