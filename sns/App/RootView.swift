@@ -1699,7 +1699,7 @@ private struct WeeklyAvailabilityGrid: View {
     @State private var pendingGutterBoundaryClearID: UUID?
     @State private var displayedControlsWindowID: AvailabilityWindow.ID?
     @State private var controlsOpacity: Double = 0
-    @State private var pendingControlsWindowClearID: UUID?
+    @State private var pendingControlsTransitionID: UUID?
 
     private let timeLabelWidth: CGFloat = 50
     private let hourHeight: CGFloat = 56
@@ -1718,6 +1718,7 @@ private struct WeeklyAvailabilityGrid: View {
     private let editButtonSize: CGFloat = 32
     private let horizontalSnapDuration: TimeInterval = 0.22
     private let snapSettleDuration: TimeInterval = 0.18
+    private let controlsFadeDuration: TimeInterval = 0.12
     private let horizontalFastDecelerationRate: CGFloat = 0.99
     private let horizontalFlickVelocityThreshold: CGFloat = 520
     private let horizontalMinimumSettleDuration: TimeInterval = 0.48
@@ -2880,25 +2881,55 @@ private struct WeeklyAvailabilityGrid: View {
             return
         }
 
-        pendingControlsWindowClearID = nil
-        displayedControlsWindowID = id
-        withAnimation(.easeOut(duration: snapSettleDuration)) {
-            controlsOpacity = 1
+        if displayedControlsWindowID == id {
+            pendingControlsTransitionID = nil
+            withAnimation(.easeOut(duration: controlsFadeDuration)) {
+                controlsOpacity = 1
+            }
+            return
+        }
+
+        guard displayedControlsWindowID != nil, controlsOpacity > 0 else {
+            pendingControlsTransitionID = nil
+            displayedControlsWindowID = id
+            withAnimation(.easeOut(duration: controlsFadeDuration)) {
+                controlsOpacity = 1
+            }
+            return
+        }
+
+        let transitionID = UUID()
+        pendingControlsTransitionID = transitionID
+        withAnimation(.easeOut(duration: controlsFadeDuration)) {
+            controlsOpacity = 0
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + controlsFadeDuration) {
+            guard pendingControlsTransitionID == transitionID else { return }
+            displayedControlsWindowID = id
+            withAnimation(.easeOut(duration: controlsFadeDuration)) {
+                controlsOpacity = 1
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + controlsFadeDuration) {
+                guard pendingControlsTransitionID == transitionID else { return }
+                pendingControlsTransitionID = nil
+            }
         }
     }
 
     private func fadeOutDisplayedControlsWindow() {
         guard displayedControlsWindowID != nil || controlsOpacity > 0 else { return }
 
-        let clearID = UUID()
-        pendingControlsWindowClearID = clearID
-        withAnimation(.easeOut(duration: snapSettleDuration)) {
+        let transitionID = UUID()
+        pendingControlsTransitionID = transitionID
+        withAnimation(.easeOut(duration: controlsFadeDuration)) {
             controlsOpacity = 0
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + snapSettleDuration) {
-            guard pendingControlsWindowClearID == clearID else { return }
-            pendingControlsWindowClearID = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + controlsFadeDuration) {
+            guard pendingControlsTransitionID == transitionID else { return }
+            pendingControlsTransitionID = nil
             displayedControlsWindowID = nil
         }
     }
