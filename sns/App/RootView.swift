@@ -1742,8 +1742,7 @@ private struct WeeklyAvailabilityGrid: View {
                                     y: 0,
                                     width: geometry.size.width,
                                     height: headerHeight + gridViewportHeight
-                                ),
-                                ignoresAvailabilityWindows: true
+                                )
                             )
                         )
                         .simultaneousGesture(clearActiveWindowGesture)
@@ -2125,8 +2124,7 @@ private struct WeeklyAvailabilityGrid: View {
             .simultaneousGesture(
                 horizontalDateDragGesture(
                     dayWidth: dayWidth,
-                    bounds: bounds,
-                    ignoresAvailabilityWindows: true
+                    bounds: bounds
                 )
             )
     }
@@ -2460,8 +2458,7 @@ private struct WeeklyAvailabilityGrid: View {
 
     private func horizontalDateDragGesture(
         dayWidth: CGFloat,
-        bounds: CGRect,
-        ignoresAvailabilityWindows: Bool = false
+        bounds: CGRect
     ) -> some Gesture {
         DragGesture(minimumDistance: 28)
             .onChanged { value in
@@ -2476,11 +2473,7 @@ private struct WeeklyAvailabilityGrid: View {
                     return
                 }
 
-                guard isHorizontalDateDrag(
-                    value,
-                    dayWidth: dayWidth,
-                    ignoresAvailabilityWindows: ignoresAvailabilityWindows
-                ) else {
+                guard isHorizontalDateDrag(value) else {
                     resetHorizontalDragTracking()
                     horizontalDragOffset = 0
                     return
@@ -2504,11 +2497,7 @@ private struct WeeklyAvailabilityGrid: View {
                     return
                 }
 
-                guard isHorizontalDateDrag(
-                    value,
-                    dayWidth: dayWidth,
-                    ignoresAvailabilityWindows: ignoresAvailabilityWindows
-                ) else {
+                guard isHorizontalDateDrag(value) else {
                     horizontalDragOffset = 0
                     return
                 }
@@ -2575,36 +2564,9 @@ private struct WeeklyAvailabilityGrid: View {
         resetWindowGestureState()
     }
 
-    private func isHorizontalDateDrag(
-        _ value: DragGesture.Value,
-        dayWidth: CGFloat,
-        ignoresAvailabilityWindows: Bool
-    ) -> Bool {
-        guard ignoresAvailabilityWindows || !startsOnAvailabilityWindow(value.startLocation, dayWidth: dayWidth) else {
-            return false
-        }
-
+    private func isHorizontalDateDrag(_ value: DragGesture.Value) -> Bool {
         return abs(value.translation.width) > abs(value.translation.height)
             && abs(value.translation.width) > 24
-    }
-
-    private func startsOnAvailabilityWindow(_ location: CGPoint, dayWidth: CGFloat) -> Bool {
-        guard dayWidth > 0, location.x >= 0 else { return false }
-
-        let visibleDayIndex = Int(floor(location.x / dayWidth))
-        let dayIndex = visibleStartIndex + visibleDayIndex
-        guard weekDates.indices.contains(dayIndex) else { return false }
-
-        let contentY = boundedContentY(location.y)
-        let xWithinVisibleDay = location.x - (CGFloat(visibleDayIndex) * dayWidth)
-        let slotMinX = slotLeadingInset
-        let slotMaxX = slotMinX + slotWidth(for: dayWidth)
-        guard xWithinVisibleDay >= slotMinX, xWithinVisibleDay <= slotMaxX else { return false }
-
-        let date = weekDates[dayIndex]
-        return appState.availabilityMinuteWindows(on: date, calendar: calendar).contains { window in
-            contentY >= minuteY(window.startMinute) && contentY <= minuteY(window.endMinute)
-        }
     }
 
     private func updateHorizontalDragVelocity(with value: DragGesture.Value) {
