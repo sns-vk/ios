@@ -2325,31 +2325,39 @@ private struct WeeklyAvailabilityGrid: View {
             height: height,
             stripOffsetX: stripOffsetX
         ) {
-            availabilityResizeHandle(width: placement.handleWidth)
-                .position(x: placement.handleX, y: placement.startY)
-                .highPriorityGesture(
-                    resizeStartGesture(for: placement.minuteWindow, on: placement.date, dayWidth: dayWidth)
-                )
-                .accessibilityIdentifier("Availability Start Handle")
+            ZStack(alignment: .topLeading) {
+                Color.clear
+                    .allowsHitTesting(false)
 
-            availabilityResizeHandle(width: placement.handleWidth)
-                .position(x: placement.handleX, y: placement.endY)
-                .highPriorityGesture(
-                    resizeEndGesture(for: placement.minuteWindow, on: placement.date, dayWidth: dayWidth)
-                )
-                .accessibilityIdentifier("Availability End Handle")
+                availabilityResizeHandle(width: placement.handleWidth)
+                    .position(x: placement.handleX, y: placement.startY)
+                    .highPriorityGesture(
+                        resizeStartGesture(for: placement.minuteWindow, on: placement.date, dayWidth: dayWidth)
+                    )
+                    .accessibilityIdentifier("Availability Start Handle")
 
-            Button {
-                onEditWindow(placement.window, placement.date)
-            } label: {
-                editButtonChrome
+                availabilityResizeHandle(width: placement.handleWidth)
+                    .position(x: placement.handleX, y: placement.endY)
+                    .highPriorityGesture(
+                        resizeEndGesture(for: placement.minuteWindow, on: placement.date, dayWidth: dayWidth)
+                    )
+                    .accessibilityIdentifier("Availability End Handle")
+
+                Button {
+                    onEditWindow(placement.window, placement.date)
+                } label: {
+                    editButtonChrome
+                }
+                .buttonStyle(AvailabilityNoPressFeedbackButtonStyle())
+                .frame(width: editButtonSize, height: editButtonSize)
+                .position(x: placement.editX, y: placement.editY)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel("Edit Selected Slot")
+                .accessibilityIdentifier("Edit Availability Window")
             }
-            .buttonStyle(AvailabilityNoPressFeedbackButtonStyle())
-            .frame(width: editButtonSize, height: editButtonSize)
-            .position(x: placement.editX, y: placement.editY)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityLabel("Edit Selected Slot")
-            .accessibilityIdentifier("Edit Availability Window")
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .id(placement.window.id)
+            .transition(.opacity)
         }
     }
 
