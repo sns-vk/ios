@@ -1579,11 +1579,16 @@ private enum AvailabilityCreationDirection {
     case downward
 }
 
-private struct AvailabilityEditButtonPlacement {
+private struct AvailabilityWindowControlsPlacement {
     let window: AvailabilityWindow
+    let minuteWindow: AvailabilityMinuteWindow
     let date: Date
-    let x: CGFloat
-    let y: CGFloat
+    let editX: CGFloat
+    let editY: CGFloat
+    let handleX: CGFloat
+    let startY: CGFloat
+    let endY: CGFloat
+    let handleWidth: CGFloat
 }
 
 private struct WeeklyAvailabilityGrid: View {
@@ -1616,7 +1621,6 @@ private struct WeeklyAvailabilityGrid: View {
     @State private var isWindowGestureActive = false
     @State private var didWindowGestureLeaveGrid = false
     @State private var selectorVisibleStartIndex: Int
-    @State private var pendingHorizontalSnap: DispatchWorkItem?
 
     private let timeLabelWidth: CGFloat = 50
     private let hourHeight: CGFloat = 56
@@ -1635,7 +1639,12 @@ private struct WeeklyAvailabilityGrid: View {
     private let horizontalSnapDuration: TimeInterval = 0.22
     private let snapSettleDuration: TimeInterval = 0.18
     private let horizontalFastDecelerationRate: CGFloat = 0.99
-    private let horizontalRubberBandResistance: CGFloat = 0.55
+    private let horizontalFlickVelocityThreshold: CGFloat = 520
+    private let horizontalMinimumSettleDuration: TimeInterval = 0.48
+    private let horizontalMaximumSettleDuration: TimeInterval = 0.78
+    private let horizontalRubberBandResistance: CGFloat = 1.1
+    private let verticalSlotBoundaryOvershootMinutes: CGFloat = 7.5
+    private let verticalSlotBoundaryResistance: CGFloat = 0.65
     private let activeColor = Color.accentColor
     private let gridLineColor = Color(red: 0.88, green: 0.88, blue: 0.9)
     private let contentCoordinateSpace = "AvailabilityGridContent"
@@ -1657,7 +1666,12 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private var isAvailabilityInteractionActive: Bool {
-        isWindowGestureActive || creatingWindowID != nil
+        creatingWindowID != nil
+            || movingOriginalWindow != nil
+            || movingPreviewWindow != nil
+            || resizingStartOriginalWindow != nil
+            || resizingEndOriginalWindow != nil
+            || resizingPreviewWindow != nil
     }
 
     init(
@@ -1740,9 +1754,14 @@ private struct WeeklyAvailabilityGrid: View {
                                         )
                                     )
                                 )
-                                .frame(width: dayViewportWidth + slotControlOverflow, height: interactiveContentHeight, alignment: .topLeading)
+                                .offset(y: slotBoundaryOvershootHeight)
+                                .frame(
+                                    width: dayViewportWidth + slotControlOverflow,
+                                    height: interactiveContentHeight + (slotBoundaryOvershootHeight * 2),
+                                    alignment: .topLeading
+                                )
                                 .clipped()
-                                .offset(x: timeLabelWidth)
+                                .offset(x: timeLabelWidth, y: -slotBoundaryOvershootHeight)
 
                                 activeEditButtonOverlay(
                                     dayWidth: dayWidth,
@@ -2096,8 +2115,6 @@ private struct WeeklyAvailabilityGrid: View {
                         creatingDirection = nil
                     }
                     isWindowGestureActive = true
-                    pendingHorizontalSnap?.cancel()
-                    pendingHorizontalSnap = nil
                     horizontalDragOffset = 0
                     let nextDirection = creationDirection(
                         anchorContentY: anchorY,
@@ -2186,9 +2203,7 @@ private struct WeeklyAvailabilityGrid: View {
             isActive: isActive,
             isLocked: isLocked,
             activeColor: activeColor,
-            moveGesture: moveGesture(for: minuteWindow, on: date, dayWidth: dayWidth),
-            resizeStartGesture: resizeStartGesture(for: minuteWindow, on: date, dayWidth: dayWidth),
-            resizeEndGesture: resizeEndGesture(for: minuteWindow, on: date, dayWidth: dayWidth)
+            moveGesture: moveGesture(for: minuteWindow, on: date, dayWidth: dayWidth)
         )
         .frame(width: slotWidth(for: dayWidth), height: windowHeight)
         .position(
@@ -2200,7 +2215,7 @@ private struct WeeklyAvailabilityGrid: View {
             activeWindowID = window.id
         }
         .allowsHitTesting(!isLocked && !isCreating)
-        .zIndex(isActive ? 2 : isCreating ? 1.5 : 1)
+        .zIndex(isActive || isCreating ? 2 : 1)
     }
 
     private func displayMinuteWindow(for minuteWindow: AvailabilityMinuteWindow) -> AvailabilityMinuteWindow {
@@ -2221,56 +2236,90 @@ private struct WeeklyAvailabilityGrid: View {
         height: CGFloat,
         stripOffsetX: CGFloat
     ) -> some View {
-        ZStack(alignment: .topLeading) {
-            if let placement = activeEditButtonPlacement(
-                dayWidth: dayWidth,
-                height: height,
-                stripOffsetX: stripOffsetX
-            ) {
-                Button {
-                    onEditWindow(placement.window, placement.date)
-                } label: {
-                    editButtonChrome
-                }
-                .buttonStyle(AvailabilityNoPressFeedbackButtonStyle())
-                .frame(width: editButtonSize, height: editButtonSize)
-                .position(x: placement.x, y: placement.y)
-                .accessibilityAddTraits(.isButton)
-                .accessibilityLabel("Edit Selected Slot")
-                .accessibilityIdentifier("Edit Availability Window")
+        if let placement = activeEditButtonPlacement(
+            dayWidth: dayWidth,
+            height: height,
+            stripOffsetX: stripOffsetX
+        ) {
+            availabilityResizeHandle(width: placement.handleWidth)
+                .position(x: placement.handleX, y: placement.startY)
+                .highPriorityGesture(
+                    resizeStartGesture(for: placement.minuteWindow, on: placement.date, dayWidth: dayWidth)
+                )
+                .accessibilityIdentifier("Availability Start Handle")
+
+            availabilityResizeHandle(width: placement.handleWidth)
+                .position(x: placement.handleX, y: placement.endY)
+                .highPriorityGesture(
+                    resizeEndGesture(for: placement.minuteWindow, on: placement.date, dayWidth: dayWidth)
+                )
+                .accessibilityIdentifier("Availability End Handle")
+
+            Button {
+                onEditWindow(placement.window, placement.date)
+            } label: {
+                editButtonChrome
             }
+            .buttonStyle(AvailabilityNoPressFeedbackButtonStyle())
+            .frame(width: editButtonSize, height: editButtonSize)
+            .position(x: placement.editX, y: placement.editY)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("Edit Selected Slot")
+            .accessibilityIdentifier("Edit Availability Window")
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func activeEditButtonPlacement(
         dayWidth: CGFloat,
         height: CGFloat,
         stripOffsetX: CGFloat
-    ) -> AvailabilityEditButtonPlacement? {
+    ) -> AvailabilityWindowControlsPlacement? {
         guard let activeWindowID, !isLocked else { return nil }
 
         for (dayIndex, date) in weekDates.enumerated() {
             for window in appState.availabilityWindows(on: date, calendar: calendar) where window.id == activeWindowID {
                 let minuteWindow = minuteWindow(for: window, on: date)
                 let displayMinuteWindow = displayMinuteWindow(for: minuteWindow)
-                let x = timeLabelWidth
+                let slotWidth = slotWidth(for: dayWidth)
+                let slotMinX = timeLabelWidth
                     + stripOffsetX
                     + (CGFloat(dayIndex) * dayWidth)
                     + slotLeadingInset
-                    + slotWidth(for: dayWidth)
-                let y = minuteY(displayMinuteWindow.startMinute)
+                let editX = slotMinX + slotWidth
+                let startY = minuteY(displayMinuteWindow.startMinute)
+                let endY = minuteY(displayMinuteWindow.endMinute)
 
-                guard y >= -editButtonSize,
-                      y <= height + editButtonSize else {
+                guard startY >= -editButtonSize,
+                      startY <= height + editButtonSize else {
                     return nil
                 }
 
-                return AvailabilityEditButtonPlacement(window: window, date: date, x: x, y: y)
+                return AvailabilityWindowControlsPlacement(
+                    window: window,
+                    minuteWindow: minuteWindow,
+                    date: date,
+                    editX: editX,
+                    editY: startY,
+                    handleX: slotMinX + (slotWidth / 2),
+                    startY: startY,
+                    endY: endY,
+                    handleWidth: max(slotWidth / 3, 24)
+                )
             }
         }
 
         return nil
+    }
+
+    private func availabilityResizeHandle(width: CGFloat) -> some View {
+        Capsule()
+            .fill(Color(.secondarySystemGroupedBackground))
+            .overlay {
+                Capsule()
+                    .stroke(.black.opacity(0.18), lineWidth: 1)
+            }
+            .frame(width: width, height: 10)
+            .contentShape(Rectangle())
     }
 
     private var editButtonChrome: some View {
@@ -2294,9 +2343,6 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private func animateDaySelection(to index: Int, dayWidth: CGFloat) {
-        pendingHorizontalSnap?.cancel()
-        pendingHorizontalSnap = nil
-
         let targetStartIndex = boundedVisibleStartIndex(index)
         let dayOffset = targetStartIndex - visibleStartIndex
         guard dayOffset != 0 else {
@@ -2327,10 +2373,7 @@ private struct WeeklyAvailabilityGrid: View {
     ) -> some Gesture {
         DragGesture(minimumDistance: 28)
             .onChanged { value in
-                pendingHorizontalSnap?.cancel()
-                pendingHorizontalSnap = nil
-
-                guard !isAvailabilityInteractionActive else {
+                guard canStartHorizontalDateDrag() else {
                     resetHorizontalDragTracking()
                     horizontalDragOffset = 0
                     return
@@ -2359,7 +2402,7 @@ private struct WeeklyAvailabilityGrid: View {
                     resetHorizontalDragTracking()
                 }
 
-                guard !isAvailabilityInteractionActive else {
+                guard canStartHorizontalDateDrag() else {
                     horizontalDragOffset = 0
                     return
                 }
@@ -2378,39 +2421,66 @@ private struct WeeklyAvailabilityGrid: View {
                     return
                 }
 
-                let projectedTranslation = projectedHorizontalTranslation(from: value)
-                let proposedDayOffset = Int(round(-projectedTranslation / dayWidth))
+                let release = horizontalReleaseTarget(from: value, dayWidth: dayWidth)
+                let proposedDayOffset = release.proposedDayOffset
                 let targetStartIndex = boundedVisibleStartIndex(visibleStartIndex + proposedDayOffset)
                 let dayOffset = targetStartIndex - visibleStartIndex
-                let settleDuration = horizontalSettleDuration(forDayOffset: dayOffset)
                 guard dayOffset != 0 else {
-                    withAnimation(.easeOut(duration: horizontalSnapDuration)) {
+                    withAnimation(
+                        horizontalSettleAnimation(
+                            forDayOffset: dayOffset,
+                            dayWidth: dayWidth,
+                            isFlick: release.isFlick
+                        )
+                    ) {
                         horizontalDragOffset = 0
                     }
                     return
                 }
 
-                withAnimation(horizontalSettleAnimation(forDayOffset: dayOffset)) {
-                    horizontalDragOffset = boundedHorizontalDrag(-CGFloat(dayOffset) * dayWidth, dayWidth: dayWidth)
+                let releaseDragOffset = boundedHorizontalDrag(value.translation.width, dayWidth: dayWidth)
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    horizontalDragOffset = releaseDragOffset + (CGFloat(dayOffset) * dayWidth)
+                    onSelectVisibleStartIndex(targetStartIndex)
                 }
 
-                let snapWorkItem = DispatchWorkItem {
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        horizontalDragOffset = 0
-                        onSelectVisibleStartIndex(targetStartIndex)
-                    }
-                    animateSelector(to: targetStartIndex)
-                    pendingHorizontalSnap = nil
+                withAnimation(
+                    horizontalSettleAnimation(
+                        forDayOffset: dayOffset,
+                        dayWidth: dayWidth,
+                        isFlick: release.isFlick
+                    )
+                ) {
+                    selectorVisibleStartIndex = targetStartIndex
+                    horizontalDragOffset = 0
                 }
-                pendingHorizontalSnap = snapWorkItem
-                DispatchQueue.main.asyncAfter(deadline: .now() + settleDuration, execute: snapWorkItem)
             }
     }
 
     private func isHorizontalDateGestureStartInsideBounds(_ location: CGPoint, in bounds: CGRect) -> Bool {
         bounds.contains(location)
+    }
+
+    private func canStartHorizontalDateDrag() -> Bool {
+        guard isAvailabilityInteractionActive else { return true }
+
+        if !isWindowGestureActive, creatingWindowID == nil {
+            clearStaleWindowInteractionState()
+            return true
+        }
+
+        return false
+    }
+
+    private func clearStaleWindowInteractionState() {
+        movingOriginalWindow = nil
+        movingPreviewWindow = nil
+        resizingStartOriginalWindow = nil
+        resizingEndOriginalWindow = nil
+        resizingPreviewWindow = nil
+        resetWindowGestureState()
     }
 
     private func isHorizontalDateDrag(
@@ -2427,16 +2497,17 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private func startsOnAvailabilityWindow(_ location: CGPoint, dayWidth: CGFloat) -> Bool {
-        let contentX = location.x - timeLabelWidth - horizontalStripOffset(dayWidth: dayWidth)
-        let contentY = boundedContentY(location.y + scrollOffsetY)
-        guard contentX >= 0 else { return false }
+        guard dayWidth > 0, location.x >= 0 else { return false }
 
-        let dayIndex = Int(floor(contentX / dayWidth))
+        let visibleDayIndex = Int(floor(location.x / dayWidth))
+        let dayIndex = visibleStartIndex + visibleDayIndex
         guard weekDates.indices.contains(dayIndex) else { return false }
 
-        let slotMinX = (CGFloat(dayIndex) * dayWidth) + slotLeadingInset
+        let contentY = boundedContentY(location.y)
+        let xWithinVisibleDay = location.x - (CGFloat(visibleDayIndex) * dayWidth)
+        let slotMinX = slotLeadingInset
         let slotMaxX = slotMinX + slotWidth(for: dayWidth)
-        guard contentX >= slotMinX, contentX <= slotMaxX else { return false }
+        guard xWithinVisibleDay >= slotMinX, xWithinVisibleDay <= slotMaxX else { return false }
 
         let date = weekDates[dayIndex]
         return appState.availabilityMinuteWindows(on: date, calendar: calendar).contains { window in
@@ -2464,6 +2535,20 @@ private struct WeeklyAvailabilityGrid: View {
         horizontalDragVelocityX = 0
     }
 
+    private func horizontalReleaseTarget(from value: DragGesture.Value, dayWidth: CGFloat) -> AvailabilityHorizontalReleaseTarget {
+        let releaseVelocity = horizontalDragVelocityX
+        let isFlick = abs(releaseVelocity) >= horizontalFlickVelocityThreshold
+        let projectedTranslation = isFlick
+            ? projectedHorizontalTranslation(from: value)
+            : value.translation.width
+        let snapTranslation = boundedHorizontalDrag(projectedTranslation, dayWidth: dayWidth)
+        let proposedDayOffset = Int(round(-snapTranslation / dayWidth))
+        return AvailabilityHorizontalReleaseTarget(
+            proposedDayOffset: proposedDayOffset,
+            isFlick: isFlick
+        )
+    }
+
     private func projectedHorizontalTranslation(from value: DragGesture.Value) -> CGFloat {
         let velocityX = horizontalDragVelocityX
         guard velocityX.isFinite else {
@@ -2477,18 +2562,47 @@ private struct WeeklyAvailabilityGrid: View {
         return projectedTranslation.isFinite ? projectedTranslation : value.translation.width
     }
 
-    private func horizontalSettleDuration(forDayOffset dayOffset: Int) -> TimeInterval {
-        let distance = max(abs(dayOffset), 1)
-        return min(horizontalSnapDuration + (TimeInterval(distance - 1) * 0.04), 0.42)
+    private func horizontalSettleDuration(
+        forDayOffset dayOffset: Int,
+        dayWidth: CGFloat,
+        isFlick: Bool
+    ) -> TimeInterval {
+        let distance = CGFloat(max(abs(dayOffset), 1)) * max(dayWidth, 1)
+        guard isFlick else {
+            let dayDistance = distance / max(dayWidth, 1)
+            return min(horizontalMinimumSettleDuration + (TimeInterval(dayDistance - 1) * 0.08), 0.72)
+        }
+
+        let velocity = max(abs(horizontalDragVelocityX), 1)
+        let physicsDuration = log(2 / velocity) / log(horizontalFastDecelerationRate) / 1000
+        guard physicsDuration.isFinite, physicsDuration > 0 else {
+            return horizontalMinimumSettleDuration
+        }
+
+        return min(max(physicsDuration, horizontalMinimumSettleDuration), horizontalMaximumSettleDuration)
     }
 
-    private func horizontalSettleAnimation(forDayOffset dayOffset: Int) -> Animation {
-        .timingCurve(
+    private func horizontalSettleAnimation(
+        forDayOffset dayOffset: Int,
+        dayWidth: CGFloat,
+        isFlick: Bool
+    ) -> Animation {
+        let duration = horizontalSettleDuration(
+            forDayOffset: dayOffset,
+            dayWidth: dayWidth,
+            isFlick: isFlick
+        )
+
+        guard isFlick else {
+            return .timingCurve(0.22, 0.68, 0.22, 1, duration: duration)
+        }
+
+        return .timingCurve(
             0.12,
-            0.82,
-            0.18,
+            0.74,
+            0.16,
             1,
-            duration: horizontalSettleDuration(forDayOffset: dayOffset)
+            duration: duration
         )
     }
 
@@ -2502,16 +2616,25 @@ private struct WeeklyAvailabilityGrid: View {
         let proposedOffset = baseOffset + translation
         let minOffset = -CGFloat(maxVisibleStartIndex) * dayWidth
         let maxOffset: CGFloat = 0
+        let rubberBandDimension = horizontalRubberBandDimension(dayWidth: dayWidth)
 
         if proposedOffset > maxOffset {
-            return maxOffset + rubberBandDistance(proposedOffset - maxOffset, dimension: dayWidth) - baseOffset
+            return maxOffset
+                + rubberBandDistance(proposedOffset - maxOffset, dimension: rubberBandDimension)
+                - baseOffset
         }
 
         if proposedOffset < minOffset {
-            return minOffset - rubberBandDistance(minOffset - proposedOffset, dimension: dayWidth) - baseOffset
+            return minOffset
+                - rubberBandDistance(minOffset - proposedOffset, dimension: rubberBandDimension)
+                - baseOffset
         }
 
         return translation
+    }
+
+    private func horizontalRubberBandDimension(dayWidth: CGFloat) -> CGFloat {
+        max(dayWidth * CGFloat(visibleDayCount), dayWidth)
     }
 
     private func rubberBandDistance(_ distance: CGFloat, dimension: CGFloat) -> CGFloat {
@@ -2534,9 +2657,11 @@ private struct WeeklyAvailabilityGrid: View {
     }
 
     private func moveGesture(for minuteWindow: AvailabilityMinuteWindow, on date: Date, dayWidth: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named(contentCoordinateSpace))
+        DragGesture(minimumDistance: 8, coordinateSpace: .named(contentCoordinateSpace))
             .onChanged { value in
                 guard !isLocked else { return }
+                guard movingOriginalWindow != nil || isVerticalWindowDrag(value) else { return }
+
                 activeWindowID = minuteWindow.id
                 isWindowGestureActive = true
                 guard updateWindowGestureBounds(for: value.location, dayWidth: dayWidth) else { return }
@@ -2559,6 +2684,11 @@ private struct WeeklyAvailabilityGrid: View {
                     return
                 }
 
+                guard movingOriginalWindow != nil || movingPreviewWindow != nil else {
+                    resetWindowGestureState()
+                    return
+                }
+
                 let originalWindow = movingOriginalWindow ?? minuteWindow
                 let grabOffsetY = boundedContentY(value.startLocation.y) - minuteY(originalWindow.startMinute)
                 let currentContentY = movingPreviewWindow.map { minuteY($0.startMinute) + grabOffsetY }
@@ -2570,6 +2700,12 @@ private struct WeeklyAvailabilityGrid: View {
                 movingOriginalWindow = nil
                 resetWindowGestureState()
             }
+    }
+
+    private func isVerticalWindowDrag(_ value: DragGesture.Value) -> Bool {
+        let horizontalDistance = abs(value.translation.width)
+        let verticalDistance = abs(value.translation.height)
+        return verticalDistance > horizontalDistance && verticalDistance > 6
     }
 
     private func resizeStartGesture(for minuteWindow: AvailabilityMinuteWindow, on date: Date, dayWidth: CGFloat) -> some Gesture {
@@ -2690,7 +2826,7 @@ private struct WeeklyAvailabilityGrid: View {
 
         let anchorRawMinute = rawMinute(forContentY: anchorContentY)
         let anchorStartMinute = floorSnappedMinute(anchorRawMinute)
-        let current = rawMinute(forContentY: currentContentY)
+        let rawCurrentMinute = rawUnboundedMinute(forContentY: currentContentY)
         let sortedWindows = existingWindows.sorted { $0.startMinute < $1.startMinute }
         let nextStart = sortedWindows
             .filter { $0.startMinute >= anchorStartMinute }
@@ -2698,9 +2834,14 @@ private struct WeeklyAvailabilityGrid: View {
             .min() ?? WeeklyAvailabilityGridRules.endMinute
 
         if direction == .downward {
-            let end = min(max(current, anchorStartMinute + WeeklyAvailabilityGridRules.minimumDurationMinutes), nextStart)
-            guard end - anchorStartMinute >= WeeklyAvailabilityGridRules.minimumDurationMinutes else { return nil }
-            return AvailabilityMinuteWindow(id: id, startMinute: anchorStartMinute, endMinute: end)
+            let elasticEnd = elasticMinute(
+                rawCurrentMinute,
+                lowerBound: anchorStartMinute + WeeklyAvailabilityGridRules.minimumDurationMinutes,
+                upperBound: nextStart
+            )
+            let current = max(elasticEnd, anchorStartMinute + WeeklyAvailabilityGridRules.minimumDurationMinutes)
+            guard current - anchorStartMinute >= WeeklyAvailabilityGridRules.minimumDurationMinutes else { return nil }
+            return AvailabilityMinuteWindow(id: id, startMinute: anchorStartMinute, endMinute: current)
         }
 
         let anchoredEndMinute = min(anchorStartMinute + WeeklyAvailabilityGridRules.minimumDurationMinutes, nextStart)
@@ -2708,7 +2849,12 @@ private struct WeeklyAvailabilityGrid: View {
             .filter { $0.endMinute <= anchoredEndMinute }
             .map(\.endMinute)
             .max() ?? WeeklyAvailabilityGridRules.startMinute
-        let start = max(min(current, anchoredEndMinute - WeeklyAvailabilityGridRules.minimumDurationMinutes), previousEnd)
+        let elasticStart = elasticMinute(
+            rawCurrentMinute,
+            lowerBound: previousEnd,
+            upperBound: anchoredEndMinute - WeeklyAvailabilityGridRules.minimumDurationMinutes
+        )
+        let start = min(elasticStart, anchoredEndMinute - WeeklyAvailabilityGridRules.minimumDurationMinutes)
         guard anchoredEndMinute - start >= WeeklyAvailabilityGridRules.minimumDurationMinutes else { return nil }
         return AvailabilityMinuteWindow(id: id, startMinute: start, endMinute: anchoredEndMinute)
     }
@@ -2796,7 +2942,11 @@ private struct WeeklyAvailabilityGrid: View {
             .min() ?? WeeklyAvailabilityGridRules.endMinute
         let lowerBound = previousEnd
         let upperBound = nextStart - duration
-        let startMinute = min(max(rawMinute(forContentY: targetStartContentY), lowerBound), upperBound)
+        let startMinute = elasticMinute(
+            rawUnboundedMinute(forContentY: targetStartContentY),
+            lowerBound: lowerBound,
+            upperBound: upperBound
+        )
 
         return AvailabilityMinuteWindow(
             id: originalWindow.id,
@@ -2836,7 +2986,11 @@ private struct WeeklyAvailabilityGrid: View {
             .map(\.endMinute)
             .max() ?? WeeklyAvailabilityGridRules.startMinute
         let upperBound = originalWindow.endMinute - WeeklyAvailabilityGridRules.minimumDurationMinutes
-        let startMinute = min(max(rawMinute(forContentY: targetContentY), lowerBound), upperBound)
+        let startMinute = elasticMinute(
+            rawUnboundedMinute(forContentY: targetContentY),
+            lowerBound: lowerBound,
+            upperBound: upperBound
+        )
 
         return AvailabilityMinuteWindow(
             id: originalWindow.id,
@@ -2856,7 +3010,11 @@ private struct WeeklyAvailabilityGrid: View {
             .filter { $0.id != originalWindow.id && $0.startMinute >= originalWindow.startMinute }
             .map(\.startMinute)
             .min() ?? WeeklyAvailabilityGridRules.endMinute
-        let endMinute = max(min(rawMinute(forContentY: targetContentY), upperBound), lowerBound)
+        let endMinute = elasticMinute(
+            rawUnboundedMinute(forContentY: targetContentY),
+            lowerBound: lowerBound,
+            upperBound: upperBound
+        )
 
         return AvailabilityMinuteWindow(
             id: originalWindow.id,
@@ -2921,6 +3079,40 @@ private struct WeeklyAvailabilityGrid: View {
         return min(max(rawMinute, WeeklyAvailabilityGridRules.startMinute), WeeklyAvailabilityGridRules.endMinute)
     }
 
+    private func rawUnboundedMinute(forContentY y: CGFloat) -> Int {
+        WeeklyAvailabilityGridRules.startMinute + Int((y / hourHeight) * 60)
+    }
+
+    private func elasticMinute(_ minute: Int, lowerBound: Int, upperBound: Int) -> Int {
+        guard lowerBound <= upperBound else { return lowerBound }
+
+        let proposed = CGFloat(minute)
+        let lower = CGFloat(lowerBound)
+        let upper = CGFloat(upperBound)
+
+        if proposed < lower {
+            return Int((lower - verticalSlotBoundaryRubberBandDistance(lower - proposed)).rounded())
+        }
+
+        if proposed > upper {
+            return Int((upper + verticalSlotBoundaryRubberBandDistance(proposed - upper)).rounded())
+        }
+
+        return minute
+    }
+
+    private func verticalSlotBoundaryRubberBandDistance(_ distance: CGFloat) -> CGFloat {
+        let magnitude = abs(distance)
+        let limit = verticalSlotBoundaryOvershootMinutes
+        let resisted = (verticalSlotBoundaryResistance * magnitude * limit)
+            / (limit + (verticalSlotBoundaryResistance * magnitude))
+        return distance < 0 ? -resisted : resisted
+    }
+
+    private var slotBoundaryOvershootHeight: CGFloat {
+        (verticalSlotBoundaryOvershootMinutes / 60) * hourHeight
+    }
+
     private func saveTopVisibleMinute(fromContentY y: CGFloat) {
         let minute = rawMinute(forContentY: y)
         if topVisibleMinute != minute {
@@ -2971,6 +3163,11 @@ private struct AvailabilityNoPressFeedbackButtonStyle: ButtonStyle {
 private struct AvailabilityHorizontalDragSample {
     let timestamp: TimeInterval
     let translationX: CGFloat
+}
+
+private struct AvailabilityHorizontalReleaseTarget {
+    let proposedDayOffset: Int
+    let isFlick: Bool
 }
 
 private struct InteractivePopGestureDisabler: UIViewRepresentable {
@@ -3432,14 +3629,12 @@ private final class AvailabilityLongPressDragRecognizer: UIGestureRecognizer {
     }
 }
 
-private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture: Gesture, ResizeEndGesture: Gesture>: View {
+private struct AvailabilityWindowBlock<MoveGesture: Gesture>: View {
     let window: AvailabilityWindow
     let isActive: Bool
     let isLocked: Bool
     let activeColor: Color
     let moveGesture: MoveGesture
-    let resizeStartGesture: ResizeStartGesture
-    let resizeEndGesture: ResizeEndGesture
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -3459,38 +3654,6 @@ private struct AvailabilityWindowBlock<MoveGesture: Gesture, ResizeStartGesture:
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 6)
-
-            if isActive {
-                GeometryReader { proxy in
-                    let handleWidth = max(proxy.size.width / 3, 24)
-                    let handleHeight: CGFloat = 10
-
-                    Capsule()
-                        .fill(Color(.secondarySystemGroupedBackground))
-                        .overlay {
-                            Capsule()
-                                .stroke(.black.opacity(0.18), lineWidth: 1)
-                        }
-                        .frame(width: handleWidth, height: handleHeight)
-                        .position(x: proxy.size.width / 2, y: 0)
-                        .highPriorityGesture(resizeStartGesture)
-                        .accessibilityIdentifier("Availability Start Handle")
-                        .zIndex(3)
-
-                    Capsule()
-                        .fill(Color(.secondarySystemGroupedBackground))
-                        .overlay {
-                            Capsule()
-                                .stroke(.black.opacity(0.18), lineWidth: 1)
-                        }
-                        .frame(width: handleWidth, height: handleHeight)
-                        .position(x: proxy.size.width / 2, y: proxy.size.height)
-                        .highPriorityGesture(resizeEndGesture)
-                        .accessibilityIdentifier("Availability End Handle")
-                        .zIndex(3)
-
-                }
-            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(isActive ? "Active Availability Window" : "Filled Availability Window")
